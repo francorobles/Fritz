@@ -1,0 +1,25 @@
+# General
+.DS_Store
+
+# Android
+android/.gradle/
+android/local.properties
+android/**/build/
+android/captures/
+
+# iOS
+ios/**/xcuserdata/
+ios/**/DerivedData/
+ios/.build/
+
+# IoT
+iot/build/
+iot/build-*/
+
+# API (Go)
+api/bin/
+
+# Web (Node/Next.js)
+web/node_modules/
+web/.next/
+web/out/
