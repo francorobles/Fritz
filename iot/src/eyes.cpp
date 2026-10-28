@@ -10,6 +10,9 @@ namespace fritz {
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
+constexpr SDL_Color kEyeColor{85, 155, 245, 255};
+constexpr float kEyeExponent = 2.4f;
+constexpr int kEyeStripes = 13;
 
 // One expression, in fractions of min(viewport_w, viewport_h), adapted
 // from the reference tutorial to EVE-pattern eyes (no pupils/brows, so
@@ -20,9 +23,6 @@ constexpr float kPi = 3.14159265358979323846f;
 //   gaze_*    resting look direction (Thinking looks up and to a side)
 //   right_open  right eye openness relative to the left (Skeptical: one
 //             eye squints, the other does not)
-//   r/g/b     eye color. Normal (and Thinking, its standby partner)
-//             use EVE's light blue from the reference image; the other
-//             expressions stay white for now.
 struct Shape {
     float half_width;
     float half_height;
@@ -33,35 +33,32 @@ struct Shape {
     float gaze_x;
     float gaze_y;
     float right_openness;
-    Uint8 r;
-    Uint8 g;
-    Uint8 b;
 };
 
 Shape shape_for(Emotion emotion) {
-    //          hw      hh     open   tilt    dx      dy      gx      gy     r-open  color (r, g, b)
+    //          hw      hh     open   tilt    dx      dy      gx      gy     r-open
     switch (emotion) {
         case Emotion::Thinking:
-            return {0.160f, 0.080f, 0.95f, 30.0f, 0.260f, -0.006f, 0.045f, -0.032f, 1.0f, 125, 216, 255};
+            return {0.160f, 0.080f, 0.95f, 30.0f, 0.260f, -0.006f, 0.045f, -0.032f, 1.0f};
         case Emotion::Surprised:
-            return {0.155f, 0.104f, 1.00f, 3.0f, 0.255f, -0.020f, 0.0f, -0.006f, 1.0f, 255, 255, 255};
+            return {0.155f, 0.104f, 1.00f, 3.0f, 0.255f, -0.020f, 0.0f, -0.006f, 1.0f};
         case Emotion::Angry:
-            return {0.164f, 0.070f, 0.72f, -18.0f, 0.258f, 0.004f, 0.0f, 0.004f, 1.0f, 255, 255, 255};
+            return {0.164f, 0.070f, 0.72f, -18.0f, 0.258f, 0.004f, 0.0f, 0.004f, 1.0f};
         case Emotion::Skeptical:
-            return {0.162f, 0.080f, 0.92f, -7.0f, 0.260f, 0.0f, 0.038f, 0.0f, 0.55f, 255, 255, 255};
+            return {0.162f, 0.080f, 0.92f, -7.0f, 0.260f, 0.0f, 0.038f, 0.0f, 0.55f};
         case Emotion::Focused:
-            return {0.166f, 0.072f, 0.78f, -10.0f, 0.258f, 0.0f, 0.0f, 0.0f, 1.0f, 255, 255, 255};
+            return {0.166f, 0.072f, 0.78f, -10.0f, 0.258f, 0.0f, 0.0f, 0.0f, 1.0f};
         case Emotion::Scared:
-            return {0.152f, 0.106f, 1.00f, 9.0f, 0.252f, -0.024f, 0.0f, -0.008f, 1.0f, 255, 255, 255};
+            return {0.152f, 0.106f, 1.00f, 9.0f, 0.252f, -0.024f, 0.0f, -0.008f, 1.0f};
         case Emotion::Happy:
-            return {0.164f, 0.076f, 0.60f, 10.0f, 0.260f, 0.006f, 0.0f, -0.004f, 1.0f, 255, 255, 255};
+            return {0.164f, 0.076f, 0.60f, 10.0f, 0.260f, 0.006f, 0.0f, -0.004f, 1.0f};
         case Emotion::Tired:
-            return {0.162f, 0.078f, 0.38f, 11.0f, 0.258f, 0.024f, 0.0f, 0.012f, 1.0f, 255, 255, 255};
+            return {0.162f, 0.078f, 0.38f, 11.0f, 0.258f, 0.024f, 0.0f, 0.012f, 1.0f};
         case Emotion::Normal:
         default:
-            // EVE reference image: light blue striped eyes, edges at 30°
-            // (left eye -30°, right eye +30°, mirrored).
-            return {0.160f, 0.080f, 0.95f, 30.0f, 0.260f, 0.0f, 0.0f, 0.0f, 1.0f, 125, 216, 255};
+            // Calm, level blue ovals with horizontal scanlines. Keep the
+            // pair symmetric; the reference photo is viewed at an angle.
+            return {0.160f, 0.105f, 1.00f, 0.0f, 0.235f, 0.0f, 0.0f, 0.0f, 1.0f};
     }
 }
 
@@ -73,7 +70,8 @@ SDL_FPoint rotate(float cx, float cy, float lx, float ly, float cos_a,
 // Solid rounded-rectangular oval (superellipse) via a triangle fan.
 // Used for the soft glow under the striped core.
 void draw_oval(SDL_Renderer* renderer, float cx, float cy, float half_w,
-               float half_h, float angle_deg, SDL_Color color) {
+               float half_h, float angle_deg, SDL_Color color,
+               float exponent = kEyeExponent) {
     constexpr int kSegments = 64;
 
     const float rad = angle_deg * kPi / 180.0f;
@@ -87,8 +85,8 @@ void draw_oval(SDL_Renderer* renderer, float cx, float cy, float half_w,
         const float t = 2.0f * kPi * static_cast<float>(i) / kSegments;
         const float c = std::cos(t);
         const float s = std::sin(t);
-        const float lx = half_w * std::copysign(std::pow(std::abs(c), 0.5f), c);
-        const float ly = half_h * std::copysign(std::pow(std::abs(s), 0.5f), s);
+        const float lx = half_w * std::copysign(std::pow(std::abs(c), 2.0f / exponent), c);
+        const float ly = half_h * std::copysign(std::pow(std::abs(s), 2.0f / exponent), s);
         const SDL_FPoint p = rotate(cx, cy, lx, ly, cos_a, sin_a);
         vertices.push_back({p, color, {0.0f, 0.0f}});
     }
@@ -110,13 +108,13 @@ void draw_oval(SDL_Renderer* renderer, float cx, float cy, float half_w,
 // chord at that height, so black gaps show between stripes (EVE pattern).
 void draw_stripe(SDL_Renderer* renderer, float cx, float cy, float half_w,
                  float half_h, float angle_deg, float y, float thickness,
-                 SDL_Color color) {
+                 SDL_Color color, float exponent) {
     const float ny = y / half_h;  // -1..1 across the eye
     if (std::abs(ny) >= 1.0f) {
         return;
     }
     const float chord =
-        half_w * std::pow(1.0f - std::pow(std::abs(ny), 4.0f), 0.25f);
+        half_w * std::pow(1.0f - std::pow(std::abs(ny), exponent), 1.0f / exponent);
     if (chord <= 1.0f) {
         return;
     }
@@ -139,11 +137,11 @@ void draw_stripe(SDL_Renderer* renderer, float cx, float cy, float half_w,
 // Striped EVE eye: horizontal bars with black gaps. Bars are brighter
 // in the middle and deeper toward the edges, as in the reference image.
 void draw_eye(SDL_Renderer* renderer, float cx, float cy, float half_w,
-              float half_h, float angle_deg, SDL_Color color) {
-    constexpr int kStripes = 9;
-    const float pitch = (2.0f * half_h) / kStripes;
+              float half_h, float angle_deg, SDL_Color color,
+              float exponent = kEyeExponent, int stripes = kEyeStripes) {
+    const float pitch = (2.0f * half_h) / stripes;
     const float thickness = pitch * 0.60f;  // rest is black gap
-    for (int i = 0; i < kStripes; ++i) {
+    for (int i = 0; i < stripes; ++i) {
         const float y = -half_h + pitch * (static_cast<float>(i) + 0.5f);
         const float edge = std::abs(y) / half_h;  // 0 center, ~1 edge
         const float shade = 1.0f - 0.38f * edge;
@@ -154,7 +152,7 @@ void draw_eye(SDL_Renderer* renderer, float cx, float cy, float half_w,
             color.a,
         };
         draw_stripe(renderer, cx, cy, half_w, half_h, angle_deg, y, thickness,
-                    bar);
+                    bar, exponent);
     }
 }
 
@@ -298,21 +296,24 @@ void Eyes::draw(SDL_Renderer* renderer, int width, int height) const {
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
-    // Soft glow behind both eyes (sized to the taller eye).
-    const SDL_Color glow{shape.r, shape.g, shape.b, 30};
-    const float glow_h = std::max(half_h_left, half_h_right);
-    draw_oval(renderer, cx - dx, cy, half_w * 1.28f, glow_h * 1.45f,
-              -shape.tilt_deg, glow);
-    draw_oval(renderer, cx + dx, cy, half_w * 1.28f, glow_h * 1.45f,
-              shape.tilt_deg, glow);
+    // Overlapping low-alpha shells follow each eye's tilt and openness.
+    const SDL_Color glow{kEyeColor.r, kEyeColor.g, kEyeColor.b, 6};
+    for (int layer = 8; layer >= 1; --layer) {
+        const float spread = static_cast<float>(layer) / 8.0f;
+        const float glow_w = half_w * (1.0f + 0.30f * spread);
+        const float height_scale = 1.0f + 0.45f * spread;
+        draw_oval(renderer, cx - dx, cy, glow_w,
+                  half_h_left * height_scale, -shape.tilt_deg, glow);
+        draw_oval(renderer, cx + dx, cy, glow_w,
+                  half_h_right * height_scale, shape.tilt_deg, glow);
+    }
 
     // Striped cores, mirrored tilt.
-    const SDL_Color core{shape.r, shape.g, shape.b, 255};
     if (half_h_left >= 2.0f) {
-        draw_eye(renderer, cx - dx, cy, half_w, half_h_left, -shape.tilt_deg, core);
+        draw_eye(renderer, cx - dx, cy, half_w, half_h_left, -shape.tilt_deg, kEyeColor);
     }
     if (half_h_right >= 2.0f) {
-        draw_eye(renderer, cx + dx, cy, half_w, half_h_right, shape.tilt_deg, core);
+        draw_eye(renderer, cx + dx, cy, half_w, half_h_right, shape.tilt_deg, kEyeColor);
     }
 }
 

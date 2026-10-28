@@ -2,8 +2,9 @@
 
 C++17 device program for a Raspberry Pi 4B. Opens a fullscreen SDL2
 window showing a pair of EVE-pattern eyes on black: rounded striped
-ovals, light blue for normal/thinking as in the EVE reference image
-(other expressions are white for now). All nine expressions from
+ovals. All expressions use the same blue color, fine scanlines, and soft
+halo as the normal eyes, matching the EVE reference. Each expression keeps
+its own tilt, gaze, and openness. All nine expressions from
 [easydrawingtips.com's eye-expressions tutorial](https://www.easydrawingtips.com/how-to-draw-eye-expressions-step-by-step/)
 are implemented: normal, thinking, surprised, angry, skeptical, focused,
 scared, happy, tired. At startup the app is in standby — it alternates

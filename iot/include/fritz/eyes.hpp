@@ -25,7 +25,7 @@ enum class Emotion {
 };
 
 // A pair of EVE-pattern eyes (rounded striped ovals on black).
-// Normal/Thinking are light blue, as in the EVE reference image.
+// All expressions share blue ovals, fine scanlines, and a soft halo.
 // Blinking runs in every emotion, like a human. In standby mode the
 // face alternates between Normal and Thinking on its own.
 // Call update() once per frame before draw().
