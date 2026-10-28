@@ -7,19 +7,21 @@
 #   scp fritz-iot.tar.gz pi@<pi-host>:~/
 #   ssh pi@<pi-host> 'docker load < ~/fritz-iot.tar.gz'
 #
-# Multi-stage: the runtime image carries only the binary, no toolchain.
+# The builder runs linux/arm64 (QEMU-emulated on x86_64, native on the Pi),
+# so SDL2 and its headers/libs always match the target. Slower than a
+# cross-compile, but no multiarch sysroot to maintain. Multi-stage: the
+# runtime image carries only the binary and SDL2 runtime libraries.
 
 # ---- Builder ----
-FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS builder
+FROM debian:bookworm-slim AS builder
 
-ARG TARGETARCH
 ARG FRITZ_IOT_ENABLE_GPIO=OFF
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential cmake \
- && if [ "$(dpkg --print-architecture)" != "$TARGETARCH" ]; then \
-      apt-get install -y --no-install-recommends crossbuild-essential-arm64; \
-    fi \
+ && apt-get install -y --no-install-recommends \
+      build-essential \
+      cmake \
+      libsdl2-dev \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -28,23 +30,29 @@ COPY cmake ./cmake
 COPY include ./include
 COPY src ./src
 
-# Native build when the builder arch matches the target (e.g. building on
-# the Pi itself); cross-compile with the repo toolchain otherwise.
-RUN if [ "$(dpkg --print-architecture)" = "$TARGETARCH" ]; then \
-      cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-        -DFRITZ_IOT_ENABLE_GPIO=$FRITZ_IOT_ENABLE_GPIO; \
-    else \
-      cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux-gnu.toolchain.cmake \
-        -DFRITZ_IOT_ENABLE_GPIO=$FRITZ_IOT_ENABLE_GPIO; \
-    fi \
+RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+      -DFRITZ_IOT_ENABLE_GPIO=$FRITZ_IOT_ENABLE_GPIO \
  && cmake --build build -j"$(nproc)" \
  && cmake --install build --prefix /out
 
 # ---- Runtime ----
 FROM debian:bookworm-slim AS runtime
 
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin fritz
+# libsdl2-2.0-0: SDL itself. libegl1/libgles2/libgbm1/libgl1-mesa-dri:
+# GPU rendering on the desktop (GL) and in kiosk mode (KMSDRM/GBM).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libsdl2-2.0-0 \
+      libegl1 \
+      libgles2 \
+      libgbm1 \
+      libgl1-mesa-dri \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin fritz \
+ && groupadd -f render \
+ && groupadd -f input \
+ && usermod -a -G video,render,input fritz
 COPY --from=builder /out/bin/fritz_iot /usr/local/bin/fritz_iot
 
 USER fritz

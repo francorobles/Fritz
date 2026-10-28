@@ -7,11 +7,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(FRITZ_IOT_ENABLE_GPIO "Build with Raspberry Pi GPIO support (stub until a GPIO backend is wired)" OFF)
 
+find_package(SDL2 REQUIRED)
+
 add_executable(fritz_iot
     src/main.cpp
     src/device.cpp
+    src/app.cpp
+    src/eyes.cpp
 )
 target_include_directories(fritz_iot PRIVATE include)
+target_link_libraries(fritz_iot PRIVATE SDL2::SDL2)
 target_compile_options(fritz_iot PRIVATE -Wall -Wextra -Wpedantic)
 
 if(FRITZ_IOT_ENABLE_GPIO)

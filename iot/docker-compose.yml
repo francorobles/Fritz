@@ -1,4 +1,4 @@
-# Fritz IoT on the Raspberry Pi.
+# Fritz IoT UI on the Raspberry Pi.
 #
 # Preferred flow: build the arm64 image on your dev machine, ship it as a
 # tarball, and load it here (see README). Then just:
@@ -18,8 +18,24 @@ services:
         FRITZ_IOT_ENABLE_GPIO: "OFF"
     container_name: fritz-iot
     restart: unless-stopped
+    # Display on the Pi desktop (X11). For Wayland, also pass
+    # WAYLAND_DISPLAY and keep the XDG_RUNTIME_DIR mount.
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      XDG_RUNTIME_DIR: /run/user/1000
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /run/user/1000:/run/user/1000
+    # GPU/input access: desktop GL and kiosk (KMSDRM, no desktop) modes.
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/input:/dev/input
+    group_add:
+      - video
+      - render
+      - input
     # --- GPIO (future): uncomment when pins are configured ---
-    # devices:
+    # devices (add):
     #   - /dev/gpiomem:/dev/gpiomem
-    # group_add:
+    # group_add (add):
     #   - gpio
