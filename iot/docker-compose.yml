@@ -1,0 +1,25 @@
+# Fritz IoT on the Raspberry Pi.
+#
+# Preferred flow: build the arm64 image on your dev machine, ship it as a
+# tarball, and load it here (see README). Then just:
+#   docker compose up -d
+# Building on the Pi itself also works (slower):
+#   docker compose up -d --build
+services:
+  fritz-iot:
+    image: fritz-iot:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
+      args:
+        # Set ON once a GPIO backend is wired and the devices below are enabled.
+        FRITZ_IOT_ENABLE_GPIO: "OFF"
+    container_name: fritz-iot
+    restart: unless-stopped
+    # --- GPIO (future): uncomment when pins are configured ---
+    # devices:
+    #   - /dev/gpiomem:/dev/gpiomem
+    # group_add:
+    #   - gpio

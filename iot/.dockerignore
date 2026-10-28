@@ -1,0 +1,8 @@
+build/
+build-pi/
+*.tar
+*.tar.gz
+.git/
+README.md
+Dockerfile
+docker-compose.yml
