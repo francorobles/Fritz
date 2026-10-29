@@ -71,8 +71,10 @@ Tools marked **Needs confirmation** don't execute. They return
 `{"status":"needs_confirmation","summary":"Send reply to Sarah: 'Thursday works'"}`
 and store a pending action. Fritz reads the summary aloud. The pending action
 runs only if the **user's next turn** is a clear yes ("yes", "send it", "do
-it"), checked by Go code, not by the model. Anything else cancels it. The
-model cannot bypass this by calling the tool again.
+it"), checked by Go code, not by the model, **or** the user taps Approve in
+the Android app. A spoken non-yes cancels it. The model cannot bypass this by
+calling the tool again. Pending actions live in the shared store described in
+`fritz-mobile-backend` (atomic approve, 15 min expiry).
 
 ## Memory ("studies me")
 

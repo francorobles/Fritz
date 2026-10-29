@@ -54,9 +54,12 @@ photo" on its own; no "you seem stressed" features.
 4. `find_object` ("where are my keys?") and `look`
 5. Memory + web dashboard + Muse Wonder consolidation
 6. Proactive greeting on arrival
-7. Anything else (Muse Image, social media, Glimmer) — only if 1–6 are solid
+7. Android companion: push alerts + Approve/Decline when away
+   (`fritz-mobile`, `fritz-mobile-backend`); push-to-talk from the phone last
+8. Anything else (Muse Image, social media, Glimmer) — only if 1–7 are solid
 
-Out of scope: `android/`, `ios/`.
+Out of scope: `ios/`. Muse Gadgets is not an option — the Muse app isn't
+available in the Philippines; the Android app replaces it.
 
 ## Demo video (aim for 2–3 min)
 
@@ -66,10 +69,13 @@ Out of scope: `android/`, `ios/`.
 3. **Action (40 s):** "Fritz, reply that Thursday works." Draft read back →
    "send it" → happy eyes. Show the sent email.
 4. **Vision (25 s):** "Fritz, where are my keys?" Eyes turn to the keys.
-5. **Memory (25 s):** dashboard shows what Fritz learned; delete one live.
-6. **How it works (30 s):** architecture diagram labelled with each Meta
+5. **Away (25 s):** walk off; eyes go to standby; an urgent email arrives;
+   the phone buzzes with Approve/Decline; tap Approve. Walk back: "Welcome
+   back — I sent your reply to Sarah."
+6. **Memory (20 s):** dashboard shows what Fritz learned; delete one live.
+7. **How it works (25 s):** architecture diagram labelled with each Meta
    model.
-7. **Close (10 s).**
+8. **Close (10 s).**
 
 Record several takes, cut the waiting, and keep real latency visible at
 least once so it's clearly not faked.

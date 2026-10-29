@@ -23,3 +23,11 @@ api/bin/
 web/node_modules/
 web/.next/
 web/out/
+
+# Secrets (Firebase, Google OAuth, env)
+android/app/google-services.json
+firebase-sa*.json
+google-client*.json
+*token.json
+*.env
+!*.env.example
