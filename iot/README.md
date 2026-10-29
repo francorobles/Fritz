@@ -104,7 +104,9 @@ login user `franco` (uid 1000; edit `User=`/`XDG_RUNTIME_DIR` if yours
 differs — `id -un`, `id -u`) so it shares the desktop and PipeWire
 session with the Go brain (desktop mode via `DISPLAY=:0`; delete those lines for KMSDRM kiosk —
 details in the unit's comments). The Go brain gets the matching
-`fritz.service` from the fritz-pi-deploy skill.
+`fritz.service` from the fritz-pi-deploy skill. Before debugging
+hardware on the Pi, run `scripts/check-hardware.sh` from the repo root
+(C922 camera/mic, PipeWire, Echo Dot speaker checks).
 
 ## Build on macOS/any host (logic check only)
 
