@@ -1,0 +1,103 @@
+package main
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestWakeMatch(t *testing.T) {
+	matches := []string{
+		"Hi Fritz",
+		"hi fritz",
+		"Hi, Fritz!",
+		"FRITZ",
+		"hey frits, are you there",
+		"Fritts",
+		"please tell Fritz I said hi",
+	}
+	for _, s := range matches {
+		if !wakeMatch(s) {
+			t.Errorf("wakeMatch(%q) = false, want true", s)
+		}
+	}
+	nonMatches := []string{
+		"",
+		"hello there",
+		"fritzgerald is here", // substring only, not a whole word
+		"hi fritzgerald",
+		"the weather is nice",
+	}
+	for _, s := range nonMatches {
+		if wakeMatch(s) {
+			t.Errorf("wakeMatch(%q) = true, want false", s)
+		}
+	}
+}
+
+func TestStepTranscribeAgainstFakeServer(t *testing.T) {
+	var gotAuth, gotRequest, gotAudio string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("ParseMultipartForm: %v", err)
+		}
+		gotRequest = r.FormValue("request")
+		file, _, err := r.FormFile("audio")
+		if err != nil {
+			t.Errorf("FormFile(audio): %v", err)
+			return
+		}
+		defer file.Close()
+		audio, _ := io.ReadAll(file)
+		gotAudio = string(audio)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"transcript":"Hi Fritz"}`)
+	}))
+	defer server.Close()
+
+	old := transcribeURL
+	transcribeURL = server.URL
+	defer func() { transcribeURL = old }()
+
+	wav := filepath.Join(t.TempDir(), "t.wav")
+	if err := os.WriteFile(wav, []byte("fake-wav-bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	transcript, err := stepTranscribe(context.Background(), wav, "test-key")
+	if err != nil {
+		t.Fatalf("stepTranscribe: %v", err)
+	}
+	if transcript != "Hi Fritz" {
+		t.Errorf("transcript = %q, want %q", transcript, "Hi Fritz")
+	}
+	if gotAuth != "Bearer test-key" {
+		t.Errorf("Authorization = %q, want Bearer test-key", gotAuth)
+	}
+	if !strings.Contains(gotRequest, `"muse-voice-transcribe-1.0"`) ||
+		!strings.Contains(gotRequest, `"WAV"`) {
+		t.Errorf("request part = %q, want model + WAV encoding", gotRequest)
+	}
+	if gotAudio != "fake-wav-bytes" {
+		t.Errorf("audio part = %q, want the wav bytes", gotAudio)
+	}
+}
+
+func TestPiperSampleRate(t *testing.T) {
+	dir := t.TempDir()
+	voice := filepath.Join(dir, "voice.onnx")
+	if err := os.WriteFile(voice+".json", []byte(`{"audio":{"sample_rate":44100}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := piperSampleRate(voice); got != 44100 {
+		t.Errorf("piperSampleRate with json = %d, want 44100", got)
+	}
+	if got := piperSampleRate(filepath.Join(dir, "missing.onnx")); got != 22050 {
+		t.Errorf("piperSampleRate without json = %d, want 22050 fallback", got)
+	}
+}

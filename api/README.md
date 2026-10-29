@@ -11,6 +11,23 @@ go test ./...              # tests
 go build -o bin/fritz-api ./cmd/server
 ```
 
+## Voice test (camera + mic + speaker, on the Pi)
+
+`cmd/voicetest` is a manual end-to-end hardware test: it grabs a C922
+frame, records from the mic, transcribes with Muse Voice Transcribe,
+and if you said "Hi Fritz" it replies with a canned line through Piper
+→ the Echo Dot while the face turns happy. No agent/Muse Spark reply
+is involved — it tests the chain, not the brain.
+
+```sh
+MODEL_API_KEY=... \
+FRITZ_PIPER_VOICE=/opt/fritz/piper/en_US-lessac-medium.onnx \
+  go run ./cmd/voicetest          # flags: -listen 5, -reply "...", -skip-camera
+```
+
+Run `scripts/check-hardware.sh` first if a step fails. Exit code is 0
+only when every step passes.
+
 ## Endpoints
 
 | Method | Path       | Description    |
@@ -21,6 +38,7 @@ go build -o bin/fritz-api ./cmd/server
 ## Layout
 
 - `cmd/server/main.go` — entry point (`ADDR` env, default `:8080`)
+- `cmd/voicetest/main.go` — manual camera/mic/speaker test (above)
 - `internal/httpapi/` — chi router and handlers
 - `internal/face/` — UDP client for the C++ face (`face.Client`:
   `Emotion`/`Standby`/`Gaze`/`GazeOff`/`Speaking`/`Blink`, plus the
