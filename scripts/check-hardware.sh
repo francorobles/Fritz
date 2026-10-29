@@ -124,7 +124,12 @@ else
     fail "Echo check skipped: bluetoothctl not installed (bluez)"
 fi
 
-if have wpctl && wpctl status 2>/dev/null | grep -q "bluez_output"; then
+# wpctl status lists sinks by description ("Echo Dot-8SG"); the
+# bluez_output.* node name only shows there once it is the configured
+# default, so look the node names up directly with pw-cli.
+if have pw-cli && pw-cli ls Node 2>/dev/null | grep -q 'node.name = "bluez_output'; then
+    pass "Echo Dot PipeWire sink present (bluez_output.*)"
+elif have wpctl && wpctl status 2>/dev/null | grep -q "bluez_output"; then
     pass "Echo Dot PipeWire sink present (bluez_output.*)"
 else
     fail "no bluez_output sink in wpctl status (pair/trust the Echo, wpctl set-default)"
