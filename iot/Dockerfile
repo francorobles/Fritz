@@ -30,7 +30,11 @@ COPY cmake ./cmake
 COPY include ./include
 COPY src ./src
 
+# BUILD_TESTING=OFF: tests/ is not copied into this image (it only needs
+# the fritz_iot binary); without this, configure fails on the missing
+# tests/ sources.
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_TESTING=OFF \
       -DFRITZ_IOT_ENABLE_GPIO=$FRITZ_IOT_ENABLE_GPIO \
  && cmake --build build -j"$(nproc)" \
  && cmake --install build --prefix /out

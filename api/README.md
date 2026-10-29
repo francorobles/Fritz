@@ -22,3 +22,7 @@ go build -o bin/fritz-api ./cmd/server
 
 - `cmd/server/main.go` — entry point (`ADDR` env, default `:8080`)
 - `internal/httpapi/` — chi router and handlers
+- `internal/face/` — UDP client for the C++ face (`face.Client`:
+  `Emotion`/`Standby`/`Gaze`/`GazeOff`/`Speaking`/`Blink`, plus the
+  assistant-state → expression mapping in `states.go`); fire-and-forget,
+  send errors are logged once and never returned

@@ -50,6 +50,52 @@ App::App(Options options) : options_(std::move(options)) {
 
     eyes_.set_standby(true);  // standby face at startup
     SDL_ShowCursor(SDL_DISABLE);
+
+    if (options_.face_port != 0) {
+        face_server_ = std::make_unique<FaceServer>(options_.face_port);
+        if (!face_server_->valid()) {
+            std::cerr << "face: UDP protocol unavailable: "
+                      << face_server_->error() << '\n';
+            face_server_.reset();
+        } else {
+            std::cout << "face: listening on udp 127.0.0.1:"
+                      << face_server_->port() << '\n';
+        }
+    }
+}
+
+int App::face_port() const {
+    return face_server_ != nullptr ? face_server_->port() : 0;
+}
+
+void App::apply(const FaceCommand& command) {
+    switch (command.type) {
+        case FaceCommand::Type::Emotion:
+            set_emotion(command.emotion);
+            std::cout << "face: emotion " << emotion_name(command.emotion)
+                      << '\n' << std::flush;
+            break;
+        case FaceCommand::Type::Standby:
+            set_standby(true);
+            std::cout << "face: standby\n" << std::flush;
+            break;
+        case FaceCommand::Type::Gaze:
+            eyes_.set_gaze_target(command.x, command.y);
+            break;
+        case FaceCommand::Type::GazeOff:
+            eyes_.clear_gaze_target();
+            std::cout << "face: gaze off\n" << std::flush;
+            break;
+        case FaceCommand::Type::Speaking:
+            eyes_.set_speaking(command.speaking);
+            std::cout << "face: speaking " << (command.speaking ? "on" : "off")
+                      << '\n' << std::flush;
+            break;
+        case FaceCommand::Type::Blink:
+            eyes_.blink_now();
+            std::cout << "face: blink\n" << std::flush;
+            break;
+    }
 }
 
 App::~App() {
@@ -80,6 +126,13 @@ void App::run() {
                 if (key == SDLK_ESCAPE || key == SDLK_q) {
                     running_.store(false);
                 }
+            }
+        }
+
+        // Face-protocol commands land before this frame's update.
+        if (face_server_ != nullptr) {
+            for (const FaceCommand& command : face_server_->poll()) {
+                apply(command);
             }
         }
 

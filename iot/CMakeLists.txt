@@ -14,10 +14,24 @@ add_executable(fritz_iot
     src/device.cpp
     src/app.cpp
     src/eyes.cpp
+    src/face_server.cpp
 )
 target_include_directories(fritz_iot PRIVATE include)
 target_link_libraries(fritz_iot PRIVATE SDL2::SDL2)
 target_compile_options(fritz_iot PRIVATE -Wall -Wextra -Wpedantic)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(fritz_face_test
+        tests/face_server_test.cpp
+        src/face_server.cpp
+        src/eyes.cpp
+    )
+    target_include_directories(fritz_face_test PRIVATE include)
+    target_link_libraries(fritz_face_test PRIVATE SDL2::SDL2)
+    target_compile_options(fritz_face_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME face_protocol COMMAND fritz_face_test)
+endif()
 
 if(FRITZ_IOT_ENABLE_GPIO)
     target_compile_definitions(fritz_iot PRIVATE FRITZ_IOT_ENABLE_GPIO=1)

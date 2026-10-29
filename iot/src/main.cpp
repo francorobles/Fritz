@@ -17,38 +17,29 @@ void handle_signal(int) {
 
 void print_usage(const char* argv0) {
     std::cout << "Usage: " << argv0 << " [--windowed] [--width N] [--height N]\n"
-              << "              [--emotion NAME]\n"
+              << "              [--emotion NAME] [--face-port N]\n"
               << "  (no args)    fullscreen standby (Pi desktop or kiosk)\n"
               << "  --windowed   windowed mode for development on a desktop\n"
               << "  --emotion    pin one face instead of standby: normal,\n"
               << "               thinking, surprised, angry, skeptical,\n"
               << "               focused, scared, happy, tired\n"
+              << "  --face-port  UDP face-protocol port (default 7070, 0 = off)\n"
               << "Quit with Esc or Q.\n";
 }
 
-bool parse_emotion(const std::string& name, fritz::Emotion& out) {
-    if (name == "normal") {
-        out = fritz::Emotion::Normal;
-    } else if (name == "thinking") {
-        out = fritz::Emotion::Thinking;
-    } else if (name == "surprised") {
-        out = fritz::Emotion::Surprised;
-    } else if (name == "angry") {
-        out = fritz::Emotion::Angry;
-    } else if (name == "skeptical") {
-        out = fritz::Emotion::Skeptical;
-    } else if (name == "focused") {
-        out = fritz::Emotion::Focused;
-    } else if (name == "scared") {
-        out = fritz::Emotion::Scared;
-    } else if (name == "happy") {
-        out = fritz::Emotion::Happy;
-    } else if (name == "tired") {
-        out = fritz::Emotion::Tired;
-    } else {
+// Port variant: 0..65535, where 0 disables the face protocol.
+bool parse_port(const char* text, int& out) {
+    try {
+        std::size_t used = 0;
+        const int value = std::stoi(text, &used);
+        if (used == 0 || text[used] != '\0' || value < 0 || value > 65535) {
+            return false;
+        }
+        out = value;
+        return true;
+    } catch (...) {
         return false;
     }
-    return true;
 }
 
 // Returns false on a bad argument (already reported).
@@ -91,9 +82,14 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Invalid --height value\n";
                 return 2;
             }
+        } else if (arg == "--face-port" && i + 1 < argc) {
+            if (!parse_port(argv[++i], options.face_port)) {
+                std::cerr << "Invalid --face-port value\n";
+                return 2;
+            }
         } else if (arg == "--emotion" && i + 1 < argc) {
             emotion_name = argv[++i];
-            if (!parse_emotion(emotion_name, emotion)) {
+            if (!fritz::parse_emotion(emotion_name, emotion)) {
                 std::cerr << "Unknown emotion: " << emotion_name << '\n';
                 print_usage(argv[0]);
                 return 2;

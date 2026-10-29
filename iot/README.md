@@ -89,6 +89,21 @@ it is just slower — the Docker builder compiles under QEMU on a desktop
 host for the same reason. GPIO passthrough (`/dev/gpiomem`) is stubbed
 as comments in `docker-compose.yml` until a GPIO backend is chosen.
 
+## Run natively on the Pi (systemd, alternative to Docker)
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
+sudo install -m755 build/fritz_iot /opt/fritz/fritz_iot
+sudo cp systemd/fritz-face.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now fritz-face
+journalctl -u fritz-face -f   # logs
+```
+
+The unit in `systemd/fritz-face.service` runs the face as user `fritz`
+(desktop mode via `DISPLAY=:0`; delete those lines for KMSDRM kiosk —
+details in the unit's comments). The Go brain gets the matching
+`fritz.service` from the fritz-pi-deploy skill.
+
 ## Build on macOS/any host (logic check only)
 
 Same CMake commands as on the Pi, plus the SDL2 dev package for your
@@ -96,13 +111,41 @@ platform — the code is portable C++17. Run `./build/fritz_iot --windowed`
 to check it without taking over the screen. Enable Pi GPIO code paths
 with `-DFRITZ_IOT_ENABLE_GPIO=ON`.
 
+## Face protocol (UDP)
+
+The Go brain drives the face over UDP on `127.0.0.1:7070` (one ASCII
+command per datagram; `--face-port N` changes it, `0` disables it):
+
+```
+emotion <name>   normal thinking surprised angry skeptical focused
+                 scared happy tired — pins an expression, leaves standby
+standby          back to the idle Normal/Thinking cycle
+gaze <x> <y>     look toward (x, y) in [-1, 1]; eased, expires in 1.5 s
+gaze off         drop the gaze override
+speaking on|off  subtle pulse while TTS plays
+blink            blink once now
+```
+
+Unknown commands are logged and ignored. Try it while the face runs:
+
+```sh
+echo "emotion happy" | nc -u -w0 127.0.0.1 7070
+```
+
+Parser and loopback tests: `ctest --test-dir build` (or run
+`build/fritz_face_test` directly).
+
 ## Layout
 
 - `src/main.cpp` — entry point, CLI args, signal handling
-- `include/fritz/app.hpp`, `src/app.cpp` — SDL2 fullscreen window + loop
+- `include/fritz/app.hpp`, `src/app.cpp` — SDL2 fullscreen window + loop;
+  polls the face server each frame before `eyes_.update()`
 - `include/fritz/eyes.hpp`, `src/eyes.cpp` — the eyes; all nine `Emotion`
   expressions live in the `shape_for` table. `Eyes::update()` runs human
   blinking (every emotion) plus standby Normal/Thinking cycling and gaze
+- `include/fritz/face_server.hpp`, `src/face_server.cpp` — non-blocking
+  UDP face-protocol listener and command parser (no threads)
 - `include/fritz/device.hpp`, `src/device.cpp` — device identity/status
+- `systemd/fritz-face.service` — native systemd unit for the Pi
 - `Dockerfile` — multi-stage arm64 build (builder + slim SDL2 runtime)
 - `docker-compose.yml` — run on the Pi (`docker compose up -d`)

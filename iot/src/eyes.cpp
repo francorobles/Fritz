@@ -158,7 +158,55 @@ void draw_eye(SDL_Renderer* renderer, float cx, float cy, float half_w,
 
 float smoothstep(float t) { return t * t * (3.0f - 2.0f * t); }
 
+// Gaze override limits: the extremes of the standby gaze ranges below
+// (Normal gx ±0.045 / Thinking gx ±0.062, gy −0.042…0.012), applied
+// symmetrically so (1, 1) is the furthest comfortable look down-right.
+constexpr float kGazeLimitX = 0.060f;
+constexpr float kGazeLimitY = 0.040f;
+constexpr float kGazeTimeConstantS = 0.15f;
+constexpr auto kGazeExpiry = std::chrono::milliseconds(1500);
+
 }  // namespace
+
+bool parse_emotion(const std::string& name, Emotion& out) {
+    if (name == "normal") {
+        out = Emotion::Normal;
+    } else if (name == "thinking") {
+        out = Emotion::Thinking;
+    } else if (name == "surprised") {
+        out = Emotion::Surprised;
+    } else if (name == "angry") {
+        out = Emotion::Angry;
+    } else if (name == "skeptical") {
+        out = Emotion::Skeptical;
+    } else if (name == "focused") {
+        out = Emotion::Focused;
+    } else if (name == "scared") {
+        out = Emotion::Scared;
+    } else if (name == "happy") {
+        out = Emotion::Happy;
+    } else if (name == "tired") {
+        out = Emotion::Tired;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+const char* emotion_name(Emotion emotion) {
+    switch (emotion) {
+        case Emotion::Thinking: return "thinking";
+        case Emotion::Surprised: return "surprised";
+        case Emotion::Angry: return "angry";
+        case Emotion::Skeptical: return "skeptical";
+        case Emotion::Focused: return "focused";
+        case Emotion::Scared: return "scared";
+        case Emotion::Happy: return "happy";
+        case Emotion::Tired: return "tired";
+        case Emotion::Normal:
+        default: return "normal";
+    }
+}
 
 Eyes::Eyes() : rng_(std::random_device{}()) {}
 
@@ -168,6 +216,7 @@ void Eyes::set_emotion(Emotion emotion) {
     gaze_x_ = 0.0f;
     gaze_y_ = 0.0f;
     gaze_moving_ = false;
+    clear_gaze_target();
 }
 
 void Eyes::set_standby(bool standby) {
@@ -179,6 +228,27 @@ void Eyes::set_standby(bool standby) {
     gaze_x_ = 0.0f;
     gaze_y_ = 0.0f;
     gaze_moving_ = false;
+    clear_gaze_target();
+}
+
+void Eyes::set_gaze_target(float x, float y) {
+    gaze_target_x_ = std::clamp(x, -1.0f, 1.0f) * kGazeLimitX;
+    gaze_target_y_ = std::clamp(y, -1.0f, 1.0f) * kGazeLimitY;
+    if (!gaze_override_) {
+        // Start easing from wherever the eyes currently rest.
+        gaze_override_x_ = standby_ ? gaze_x_ : shape_for(emotion_).gaze_x;
+        gaze_override_y_ = standby_ ? gaze_y_ : shape_for(emotion_).gaze_y;
+        gaze_override_ = true;
+    }
+    gaze_deadline_ = std::chrono::steady_clock::now() + kGazeExpiry;
+}
+
+void Eyes::clear_gaze_target() {
+    gaze_override_ = false;
+    gaze_override_x_ = 0.0f;
+    gaze_override_y_ = 0.0f;
+    gaze_target_x_ = 0.0f;
+    gaze_target_y_ = 0.0f;
 }
 
 void Eyes::update() {
@@ -195,6 +265,31 @@ void Eyes::update() {
     }
     const float elapsed =
         std::chrono::duration<float>(now - start_).count();
+    const float dt = std::max(0.0f, elapsed - last_elapsed_s_);
+    last_elapsed_s_ = elapsed;
+
+    // --- Requested blink (face protocol) -------------------------------
+    if (blink_pending_ && !blinking_) {
+        blink_pending_ = false;
+        blinking_ = true;
+        blink_start_s_ = elapsed;
+    }
+
+    // --- Gaze override: ease toward target, expire after 1.5 s ---------
+    if (gaze_override_) {
+        if (now >= gaze_deadline_) {
+            clear_gaze_target();
+        } else if (dt > 0.0f) {
+            const float alpha = 1.0f - std::exp(-dt / kGazeTimeConstantS);
+            gaze_override_x_ += (gaze_target_x_ - gaze_override_x_) * alpha;
+            gaze_override_y_ += (gaze_target_y_ - gaze_override_y_) * alpha;
+        }
+    }
+
+    // --- Speaking pulse: ~4 Hz openness wobble --------------------------
+    speaking_pulse_ = speaking_
+                          ? 1.0f + 0.07f * std::sin(2.0f * kPi * 4.0f * elapsed)
+                          : 1.0f;
 
     // --- Human blink (all emotions): ~120–300 ms, every ~3–6 s --------
     const float blink_seconds = emotion_ == Emotion::Tired ? 0.30f : 0.15f;
@@ -284,14 +379,17 @@ void Eyes::draw(SDL_Renderer* renderer, int width, int height) const {
     const float unit = static_cast<float>(std::min(width, height));
     // In standby the animated gaze replaces the shape's resting gaze,
     // so switching Normal <-> Thinking never pops the eyes sideways.
-    const float look_x = standby_ ? gaze_x_ : shape.gaze_x;
-    const float look_y = standby_ ? gaze_y_ : shape.gaze_y;
+    // A gaze override (face protocol) wins over both.
+    const float look_x = gaze_override_ ? gaze_override_x_
+                                        : (standby_ ? gaze_x_ : shape.gaze_x);
+    const float look_y = gaze_override_ ? gaze_override_y_
+                                        : (standby_ ? gaze_y_ : shape.gaze_y);
     const float cx = width * 0.5f + look_x * unit;
     const float cy = height * 0.5f + (shape.center_dy + look_y) * unit;
     const float dx = shape.center_dx * unit;
     const float half_w = shape.half_width * unit;
     const float half_h_left = shape.half_height * shape.openness *
-                              blink_openness_ * unit;
+                              blink_openness_ * speaking_pulse_ * unit;
     const float half_h_right = half_h_left * shape.right_openness;
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);

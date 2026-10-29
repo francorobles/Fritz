@@ -1,0 +1,31 @@
+# Fritz face (C++/SDL2 eyes) on the Raspberry Pi — native install.
+# The Go brain's unit is fritz.service (see the fritz-pi-deploy skill);
+# it starts after this one but neither hard-depends on the other: the
+# face shows standby on its own, and the brain's face client is
+# fire-and-forget UDP.
+#
+# Install:
+#   sudo cp fritz-face.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now fritz-face
+# Logs: journalctl -u fritz-face -f
+[Unit]
+Description=Fritz face (eyes display)
+After=network.target sound.target
+
+[Service]
+User=fritz
+# Desktop mode: SDL draws on the Pi desktop. User and XDG_RUNTIME_DIR
+# must match the desktop login user (usually uid 1000) so SDL can reach
+# the running X/Wayland session. For kiosk (no desktop, SDL KMSDRM
+# direct on /dev/dri), delete the DISPLAY/XDG lines — the
+# video/render/input groups below are what KMSDRM needs instead.
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+SupplementaryGroups=video render input audio
+ExecStart=/opt/fritz/fritz_iot
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

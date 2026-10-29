@@ -1,9 +1,11 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <string>
 
 #include "fritz/eyes.hpp"
+#include "fritz/face_server.hpp"
 
 namespace fritz {
 
@@ -17,6 +19,7 @@ public:
         int width = 1280;
         int height = 720;
         std::string title = "Fritz";
+        int face_port = 7070;  // UDP face protocol; 0 disables it
     };
 
     explicit App(Options options);
@@ -48,9 +51,18 @@ public:
     }
     bool standby() const { return standby_; }
 
+    // Port the face protocol listens on, or 0 when disabled/failed.
+    int face_port() const;
+
 private:
+    // Applies one face-protocol command to the eyes/standby state.
+    void apply(const FaceCommand& command);
+
     Options options_;
     Eyes eyes_;
+    // Null when the face protocol is disabled or failed to bind (the
+    // face still runs; face_server.hpp itself keeps sockets out).
+    std::unique_ptr<FaceServer> face_server_;
     bool standby_ = true;
     std::string error_;
     std::atomic<bool> running_{false};
