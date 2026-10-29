@@ -5,6 +5,8 @@
 # fire-and-forget UDP.
 #
 # Install:
+#   (if your login user isn't franco/uid 1000, edit User= and
+#   XDG_RUNTIME_DIR below first: `id -un`, `id -u`)
 #   sudo cp fritz-face.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now fritz-face
@@ -12,9 +14,12 @@
 [Unit]
 Description=Fritz face (eyes display)
 After=network.target sound.target
+# Keep retrying while the desktop session comes up at boot; the default
+# start limit (5 starts in 10 s) gives up before it is ready.
+StartLimitIntervalSec=0
 
 [Service]
-User=fritz
+User=franco
 # Desktop mode: SDL draws on the Pi desktop. User and XDG_RUNTIME_DIR
 # must match the desktop login user (usually uid 1000) so SDL can reach
 # the running X/Wayland session. For kiosk (no desktop, SDL KMSDRM

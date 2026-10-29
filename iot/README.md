@@ -99,8 +99,10 @@ sudo systemctl daemon-reload && sudo systemctl enable --now fritz-face
 journalctl -u fritz-face -f   # logs
 ```
 
-The unit in `systemd/fritz-face.service` runs the face as user `fritz`
-(desktop mode via `DISPLAY=:0`; delete those lines for KMSDRM kiosk —
+The unit in `systemd/fritz-face.service` runs the face as the desktop
+login user `franco` (uid 1000; edit `User=`/`XDG_RUNTIME_DIR` if yours
+differs — `id -un`, `id -u`) so it shares the desktop and PipeWire
+session with the Go brain (desktop mode via `DISPLAY=:0`; delete those lines for KMSDRM kiosk —
 details in the unit's comments). The Go brain gets the matching
 `fritz.service` from the fritz-pi-deploy skill.
 
