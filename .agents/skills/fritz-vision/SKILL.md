@@ -1,7 +1,7 @@
 ---
 name: fritz-vision
 description: >
-  Fritz's camera: capturing frames from the Raspberry Pi camera, detecting
+  Fritz's camera: capturing frames from the C922 USB webcam, detecting
   whether the user is present, making the eyes follow the user's face with SAM
   3.1, and vision tools for the agent ("look at this", "where are my keys?").
   Use when working on camera capture, presence detection, gaze tracking,
@@ -17,25 +17,23 @@ Vision lives in Go (`api/internal/vision/`). It feeds three things: the face
 
 ## Capture
 
-The Pi 4 camera uses libcamera; capture with the `rpicam-*` tools (named
-`libcamera-*` on older Raspberry Pi OS — detect which exists at startup).
+The camera is a **Logitech C922 USB webcam** — load `fritz-c922` for the
+device path, the exact ffmpeg command, and camera controls. In short:
 
-- Stills for the agent: `rpicam-still -n -t 1 --width 1280 --height 720 -e jpg -o -`
-  (stdout JPEG).
-- Continuous frames for tracking: one long-running
-  `rpicam-vid -n -t 0 --codec mjpeg --width 640 --height 480 --framerate 5 -o -`
-  and split the MJPEG stream on JPEG SOI/EOI markers (`FF D8` … `FF D9`). Keep
-  only the latest frame; drop the rest.
-- One process owns the camera. Stills for the agent come from the same stream
-  (latest frame) rather than starting `rpicam-still` while `rpicam-vid` runs.
-- On the desktop (no Pi camera), fall back to `ffmpeg -f v4l2 -i /dev/video0`
-  with the same MJPEG output, chosen by `FRITZ_CAMERA=rpicam|v4l2|off`.
+- One long-running `ffmpeg` reads the C922's native MJPEG at 1280×720 and
+  copies frames to stdout without re-encoding; Go splits them on JPEG
+  markers and keeps only the latest frame.
+- One process owns the camera. Tracking, `look`, and `find_object` all read
+  that shared latest frame.
+- `FRITZ_CAMERA=v4l2|off` (default `v4l2`). The same code works on a Linux
+  laptop with any UVC webcam.
 
 ## Presence + face following (SAM 3.1)
 
 Loop at ~1–2 Hz (configurable `FRITZ_TRACK_HZ`, never above 2):
 
-1. Take the latest frame (640×480 JPEG → base64 data URL).
+1. Take the latest frame, downscale to 640 px wide (see `fritz-c922`),
+   base64 data URL.
 2. SAM 3.1 with prompt `"person"` (try `"face"` too — pick whichever gives
    tighter boxes on real frames).
 3. Parse boxes (see the parser warning in `meta-model-api`), pick the largest.

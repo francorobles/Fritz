@@ -2,8 +2,8 @@
 
 Fritz is a desk companion for the Meta Global AI Hackathon (submission
 deadline **Nov 4, 2026, 9 PM ET**). It runs on a Raspberry Pi 4B with a
-display (animated EVE-style eyes), a USB microphone, a speaker, and a Pi
-camera. You talk to it by voice; it sees you, follows you with its eyes,
+display (animated EVE-style eyes), a Logitech C922 USB webcam (camera and
+microphone), and an Echo Dot as a Bluetooth speaker. You talk to it by voice; it sees you, follows you with its eyes,
 reads your email and calendar, and remembers your routines.
 
 ## Architecture (decided — don't redesign)
@@ -15,10 +15,10 @@ reads your email and calendar, and remembers your routines.
  │       fullscreen eyes                                 │
  │                                                       │
  │ api/  fritz (Go)  ── the brain                        │
- │   mic (arecord) → Muse Voice Transcribe (realtime WS) │
+ │   C922 mic      → Muse Voice Transcribe (realtime WS) │
  │   agent loop    → Muse Spark 1.3 tool calling         │
- │   camera (rpicam-still) → SAM 3.1 / Muse Spark vision │
- │   speech out    → Piper TTS (local) → aplay           │
+ │   C922 camera (ffmpeg) → SAM 3.1 / Muse Spark vision  │
+ │   speech out    → Piper TTS (local) → Echo Dot (BT)   │
  │   Gmail + Calendar, memory store (SQLite)             │
  │   HTTP :8080 for web/ and android/                    │
  │   FCM pushes to the phone when the user is away       │
@@ -40,7 +40,8 @@ reads your email and calendar, and remembers your routines.
 |---|---|
 | `meta-model-api` | Any call to Muse Spark, Muse Wonder, Muse Image, Muse Voice Transcribe, SAM 3.1 |
 | `fritz-eyes` | The C++ face, the UDP face protocol, emotion ↔ state mapping |
-| `fritz-vision` | Pi camera, presence detection, eyes following you, "where is X" |
+| `fritz-c922` | The C922 webcam (camera + mic) and Echo Dot speaker: devices, capture/playback commands, echo avoidance |
+| `fritz-vision` | Camera frames → presence detection, eyes following you, "where is X" |
 | `fritz-voice` | Mic capture, transcription, wake phrase, TTS |
 | `fritz-agent` | The Muse Spark tool-calling loop, tools, memory, guardrails |
 | `fritz-integrations` | Gmail and Google Calendar (OAuth, tools) |

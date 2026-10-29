@@ -16,19 +16,23 @@ transcription protocol.
 ## Pipeline
 
 ```
-arecord (16 kHz s16le mono, stdout)
+C922 mic → arecord -D pipewire (16 kHz s16le mono, stdout)
   → realtime WS wss://api.meta.ai/v1/asr/realtime  (ENDPOINTING)
   → speechComplete turns
   → wake-phrase filter → agent → reply text
-  → Piper TTS → aplay      (face: speaking on/off)
+  → Piper TTS → aplay -D pipewire → Echo Dot (Bluetooth)
+                                    (face: speaking on/off)
 ```
+
+Hardware details (device names, levels, Bluetooth reconnects) are in
+`fritz-c922`.
 
 ## Capture
 
 - `arecord -D "$FRITZ_MIC" -f S16_LE -r 16000 -c 1 -t raw -q -` and read
   stdout in 100 ms chunks (3,200 bytes).
-- `FRITZ_MIC` defaults to `default`; list devices with `arecord -l`.
-- Desktop fallback: same command works with PipeWire/PulseAudio.
+- `FRITZ_MIC` defaults to `pipewire` (the C922 is the default source).
+- Same command works on a Linux laptop with PipeWire.
 
 ## Transcription
 
@@ -68,13 +72,15 @@ Meta's API has no speech synthesis, so Fritz uses Piper (offline, runs on the
 Pi 4). Say so in the README and demo — it isn't a Meta model.
 
 - `echo "$TEXT" | piper --model "$FRITZ_PIPER_VOICE" --output-raw |
-  aplay -r 22050 -f S16_LE -c 1 -t raw -q` (the sample rate must match the
-  voice's `.onnx.json`).
+  aplay -D pipewire -r 22050 -f S16_LE -c 1 -t raw -q` (the sample rate must
+  match the voice's `.onnx.json`). Output goes to the Echo Dot.
 - Speak sentence by sentence as the agent's reply arrives, so the first words
   start sooner.
 - Face: `speaking on` before the first chunk, `speaking off` after the last.
-- While speaking, drop incoming turns to avoid Fritz hearing itself; if the
-  user says "Fritz, stop", kill the aplay process (barge-in).
+- While speaking, and for 700 ms after (Bluetooth delay), send silence
+  instead of mic audio so Fritz doesn't hear itself through the C922 — see
+  "Echo avoidance" in `fritz-c922`. Stopping Fritz mid-sentence is done from
+  the phone app, not by voice.
 
 ## Testing
 
