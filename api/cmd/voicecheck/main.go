@@ -160,11 +160,18 @@ func main() {
 			}
 		}
 		tools = agent.MailTools(reg.Mailboxes)
-		tools = append(tools, agent.CalendarTools(reg.Calendar)...)
-		// Creating events is gated: the tool only files a
-		// pending action; the confirmer (or the phone app)
-		// executes it after an explicit yes.
-		tools = append(tools, agent.CalendarCreateTool(reg.Calendar, actStore)...)
+		// Only offer calendar tools when the client actually
+		// built — a nil *Calendar wrapped in an interface is
+		// not nil, and offering the tool then panics on use.
+		if reg.Calendar != nil {
+			tools = append(tools, agent.CalendarTools(reg.Calendar)...)
+			// Creating events is gated: the tool only files a
+			// pending action; the confirmer (or the phone app)
+			// executes it after an explicit yes.
+			tools = append(tools, agent.CalendarCreateTool(reg.Calendar, actStore)...)
+		} else if icfg.Calendar.Enabled {
+			fmt.Println("tools: calendar enabled but the client did not build — no calendar tools (see the status line above)")
+		}
 		if reg.Calendar != nil && actStore != nil {
 			confirmer = &agent.Confirmer{
 				Store: actStore,

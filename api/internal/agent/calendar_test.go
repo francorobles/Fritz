@@ -86,6 +86,14 @@ func TestCalendarListTool(t *testing.T) {
 	if tools := CalendarTools(nil); tools != nil {
 		t.Errorf("CalendarTools(nil) = %v, want nil (no tool offered)", tools)
 	}
+	// Typed nil: a nil *fakeCal in the interface is not == nil,
+	// and offering the tool then panics on first use (the Pi crash).
+	if tools := CalendarTools((*fakeCal)(nil)); tools != nil {
+		t.Errorf("CalendarTools(typed nil) = %v, want nil", tools)
+	}
+	if tools := CalendarCreateTool((*fakeCreator)(nil), newActionStore(t)); tools != nil {
+		t.Errorf("CalendarCreateTool(typed nil) = %v, want nil", tools)
+	}
 	local := time.Local
 	fake := &fakeCal{events: []integrations.Event{
 		{Summary: "Dentist", Start: time.Date(2030, 10, 31, 8, 0, 0, 0, local),

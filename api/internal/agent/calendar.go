@@ -4,12 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/actions"
 	"github.com/francorobles/fritz/api/internal/integrations"
 )
+
+// isNil reports whether v is nil, including a typed nil
+// pointer wrapped in an interface — the classic Go trap where
+// a nil *integrations.Calendar passes `cal == nil` as an
+// interface and the tool gets offered with no client behind it
+// (it panicked on first use before this check existed).
+func isNil(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func:
+		return rv.IsNil()
+	}
+	return false
+}
 
 // CalendarLister is the slice of the calendar client the tool
 // needs (a fake in tests).
@@ -21,7 +39,7 @@ type CalendarLister interface {
 // events stays out of the agent until the confirmation rule
 // has a home here (fritz-agent skill).
 func CalendarTools(cal CalendarLister) []Tool {
-	if cal == nil {
+	if isNil(cal) {
 		return nil
 	}
 	return []Tool{
@@ -148,7 +166,7 @@ func (a createEventArgs) times() (time.Time, time.Time, error) {
 // model to read the summary aloud and ask; it must never claim
 // the event exists yet.
 func CalendarCreateTool(cal CalendarCreator, store *actions.Store) []Tool {
-	if cal == nil || store == nil {
+	if isNil(cal) || store == nil {
 		return nil
 	}
 	return []Tool{

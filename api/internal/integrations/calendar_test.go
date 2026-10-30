@@ -72,6 +72,26 @@ func TestCalendarCreateEvent(t *testing.T) {
 	}
 }
 
+// A Calendar that never built (nil receiver or nil service)
+// must return an error, never panic — the agent offered the
+// tool with a nil client once and crashed voicecheck.
+func TestCalendarNotConnected(t *testing.T) {
+	var nilCal *Calendar
+	if _, err := nilCal.ListEvents(context.Background(), time.Now(), time.Now(), 5); err == nil {
+		t.Error("nil Calendar ListEvents: want error, not panic/nil")
+	}
+	if _, err := nilCal.CreateEvent(context.Background(), "X", time.Now(), time.Now().Add(time.Hour), ""); err == nil {
+		t.Error("nil Calendar CreateEvent: want error, not panic/nil")
+	}
+	empty := &Calendar{}
+	if _, err := empty.ListEvents(context.Background(), time.Now(), time.Now(), 5); err == nil {
+		t.Error("svc-less Calendar ListEvents: want error, not panic/nil")
+	}
+	if _, err := empty.CreateEvent(context.Background(), "X", time.Now(), time.Now().Add(time.Hour), ""); err == nil {
+		t.Error("svc-less Calendar CreateEvent: want error, not panic/nil")
+	}
+}
+
 func TestCalendarListEvents(t *testing.T) {
 	cal := fakeCalendar(t)
 	from := time.Date(2030, 10, 31, 0, 0, 0, 0, time.UTC)

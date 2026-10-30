@@ -57,6 +57,9 @@ func NewGoogleCalendar(ctx context.Context) (*Calendar, error) {
 // first, recurring events expanded (SingleEvents per the
 // fritz-integrations skill).
 func (c *Calendar) ListEvents(ctx context.Context, from, to time.Time, max int) ([]Event, error) {
+	if c == nil || c.svc == nil {
+		return nil, fmt.Errorf("calendar: not connected (enable calendar in integrations.json and check the startup status)")
+	}
 	if max <= 0 || max > 50 {
 		max = 20
 	}
@@ -104,6 +107,9 @@ func (c *Calendar) ListEvents(ctx context.Context, from, to time.Time, max int) 
 // through the confirmation rule (pending action + explicit
 // user yes), never call it speculatively.
 func (c *Calendar) CreateEvent(ctx context.Context, summary string, start, end time.Time, location string) (Event, error) {
+	if c == nil || c.svc == nil {
+		return Event{}, fmt.Errorf("calendar: not connected (enable calendar in integrations.json and check the startup status)")
+	}
 	if strings.TrimSpace(summary) == "" {
 		return Event{}, fmt.Errorf("calendar: event title is empty")
 	}
