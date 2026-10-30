@@ -69,6 +69,61 @@ func TestTurnCollector(t *testing.T) {
 	}
 }
 
+func TestTurnCollectorLatest(t *testing.T) {
+	c := &TurnCollector{}
+	if got := c.Latest(); got != "" {
+		t.Errorf("Latest with no events = %q, want empty", got)
+	}
+	c.Observe(Event{Type: "transcript", TurnID: "t1", Transcript: "Hi"})
+	c.Observe(Event{Type: "transcript", TurnID: "t1", Transcript: "Hi Fritz"})
+	// Latest peeks without forgetting: a later Complete still works.
+	if got := c.Latest(); got != "Hi Fritz" {
+		t.Errorf("Latest = %q, want newest cumulative text", got)
+	}
+	if got := c.Complete(Event{Type: "speechComplete", TurnID: "t1"}); got != "Hi Fritz" {
+		t.Errorf("Complete after Latest = %q", got)
+	}
+	// TakeLatest returns the text and forgets it (local endpointing).
+	c.Observe(Event{Type: "transcript", TurnID: "t2", Transcript: "stalled turn"})
+	if got := c.TakeLatest(); got != "stalled turn" {
+		t.Errorf("TakeLatest = %q", got)
+	}
+	if got := c.Latest(); got != "" {
+		t.Errorf("Latest after TakeLatest = %q, want empty", got)
+	}
+	if got := c.TakeLatest(); got != "" {
+		t.Errorf("TakeLatest twice = %q, want empty", got)
+	}
+}
+
+// TestVoiceConcurrentUse hammers the collector and tracker from
+// several goroutines: both are now shared between the event callback
+// and the endpointing watcher, so they must be race-free (run with
+// -race to check) and never deadlock.
+func TestVoiceConcurrentUse(t *testing.T) {
+	c := &TurnCollector{}
+	tr := &Tracker{}
+	now := time.Unix(1000, 0)
+	done := make(chan struct{})
+	for g := 0; g < 4; g++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			for i := 0; i < 50; i++ {
+				c.Observe(Event{Type: "transcript", TurnID: "t", Transcript: "hi"})
+				_ = c.Latest()
+				_ = c.TakeLatest()
+				_ = c.Complete(Event{Type: "speechComplete", TurnID: "t"})
+				_, _ = tr.Accept("Hi Fritz", now)
+				tr.MarkReplied(now)
+				_ = tr.Awake(now)
+			}
+		}()
+	}
+	for g := 0; g < 4; g++ {
+		<-done
+	}
+}
+
 func TestPiperSampleRate(t *testing.T) {
 	dir := t.TempDir()
 	voice := filepath.Join(dir, "voice.onnx")

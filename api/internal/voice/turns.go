@@ -1,6 +1,9 @@
 package voice
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // Tracker turns completed transcripts into agent requests using the
 // wake phrase. It is a small state machine with three states:
@@ -18,6 +21,7 @@ import "time"
 // the realtime API) and returns the request text, or "" if the turn
 // should be ignored.
 type Tracker struct {
+	mu              sync.Mutex
 	wakeOnlyPending bool
 	awakeUntil      time.Time
 }
@@ -28,6 +32,8 @@ const FollowUpWindow = 8 * time.Second
 
 // Accept processes one completed transcript at time now.
 func (t *Tracker) Accept(transcript string, now time.Time) (request string, ok bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if WakeMatch(transcript) {
 		t.wakeOnlyPending = false
 		rest := StripWake(transcript)
@@ -51,6 +57,8 @@ func (t *Tracker) Accept(transcript string, now time.Time) (request string, ok b
 // MarkReplied opens the follow-up window when Fritz finishes speaking
 // at time now.
 func (t *Tracker) MarkReplied(now time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.wakeOnlyPending = false
 	t.awakeUntil = now.Add(FollowUpWindow)
 }
@@ -58,5 +66,7 @@ func (t *Tracker) MarkReplied(now time.Time) {
 // Awake reports whether the tracker would accept a non-wake turn at
 // time now (for the face: focused while awake).
 func (t *Tracker) Awake(now time.Time) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	return t.wakeOnlyPending || now.Before(t.awakeUntil)
 }

@@ -143,17 +143,33 @@ func main() {
 	// handleTurn runs one completed turn through the wake tracker.
 	// The same turn can complete twice in the event stream (a final
 	// transcript, then speechComplete), so identical text within a
-	// few seconds is only handled once.
+	// few seconds is only handled once. It runs on both the event
+	// callback and the endpointing watcher below, so the dedupe
+	// state is mutex-guarded.
+	var turnMu sync.Mutex
 	lastHandled := ""
 	lastHandledAt := time.Time{}
-	handleTurn := func(text string) {
+	claimTurn := func(text string) bool {
+		turnMu.Lock()
+		defer turnMu.Unlock()
 		if text == "" {
-			return
+			return false
 		}
 		if text == lastHandled && time.Since(lastHandledAt) < 3*time.Second {
-			return
+			return false
 		}
 		lastHandled, lastHandledAt = text, time.Now()
+		return true
+	}
+	neverHandled := func() bool {
+		turnMu.Lock()
+		defer turnMu.Unlock()
+		return lastHandled == ""
+	}
+	handleTurn := func(text string) {
+		if !claimTurn(text) {
+			return
+		}
 		fmt.Printf("[turn complete] %q\n", text)
 		if request, ok := tracker.Accept(text, time.Now()); ok {
 			if faceClient != nil {
@@ -169,6 +185,49 @@ func main() {
 			}
 		}
 	}
+
+	// Some sessions never close a turn: no final transcript, no
+	// speechComplete — partials just stop changing. Watch for that
+	// stall and finish the turn locally, so a quiet server never
+	// leaves a request unheard. A late server completion carrying
+	// the same text is dropped by handleTurn's dedupe.
+	go func() {
+		const (
+			poll     = 200 * time.Millisecond
+			stallFor = 1500 * time.Millisecond
+		)
+		ticker := time.NewTicker(poll)
+		defer ticker.Stop()
+		var lastText string
+		var stableSince time.Time
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				if client.Muted.Load() {
+					// Fritz is speaking; the mic hears
+					// only silence, and any collected
+					// text predates the reply.
+					lastText, stableSince = "", time.Time{}
+					continue
+				}
+				text := collector.Latest()
+				if text == "" || text != lastText {
+					lastText, stableSince = text, now
+					continue
+				}
+				if now.Sub(stableSince) < stallFor {
+					continue
+				}
+				lastText, stableSince = "", time.Time{}
+				if taken := collector.TakeLatest(); taken != "" {
+					fmt.Println("[turn endpointed locally after stall]")
+					handleTurn(taken)
+				}
+			}
+		}
+	}()
 
 	err = client.Run(ctx, audio, func(event voice.Event) {
 		collector.Observe(event)
@@ -197,7 +256,7 @@ func main() {
 			}
 		case "speechComplete":
 			text := collector.Complete(event)
-			if text == "" && lastHandled == "" {
+			if text == "" && neverHandled() {
 				fmt.Println("[turn complete with no text — run with FRITZ_VOICE_DEBUG=1 and report the event lines]")
 				return
 			}
