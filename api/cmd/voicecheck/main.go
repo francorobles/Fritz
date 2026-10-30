@@ -118,6 +118,18 @@ func main() {
 	}
 	ackAfter := envMillis("FRITZ_ACK_AFTER_MS", 600)
 	stallFor := envMillis("FRITZ_STALL_MS", 900)
+	// Print what actually took effect: env-file mistakes (wrong
+	// file, a missing newline gluing two lines) are otherwise
+	// indistinguishable from the code ignoring a setting.
+	ackState := fmt.Sprintf("after %s", ackAfter)
+	switch {
+	case engine == nil:
+		ackState = "off (needs the persistent engine)"
+	case ackAfter == 0:
+		ackState = "off"
+	}
+	fmt.Printf("settings: persistent Piper %v (FRITZ_PIPER_PERSIST=%q), ack %s, end-of-speech wait %s\n",
+		engine != nil, os.Getenv("FRITZ_PIPER_PERSIST"), ackState, stallFor)
 	// lastHeard is when the latest transcript text arrived — about
 	// when the user stopped talking — for the per-turn timing line.
 	var lastHeard atomic.Int64
