@@ -289,7 +289,7 @@ func main() {
 		}
 
 		// If Spark's first sentence is slow, say a short pre-rendered
-		// "Mm-hm." so the user hears Fritz respond right away. The
+		// "Ok!" so the user hears Fritz respond right away. The
 		// lock makes "ack" and "first sentence" mutually ordered: the
 		// ack is only queued if no sentence has been queued yet.
 		var spokeMu sync.Mutex
@@ -607,7 +607,7 @@ func (m engineMouth) Close() error              { return m.engine.Wait(m.ctx) }
 // ackPhrases are pre-rendered at startup and played when Spark's
 // first sentence is slow to arrive. Short and neutral, so they fit
 // any question.
-var ackPhrases = []string{"Mm-hm.", "Okay.", "Let me see.", "One sec."}
+var ackPhrases = []string{"Ok!", "Okay.", "Let me see.", "One sec."}
 
 func renderAcks(ctx context.Context, engine *voice.Engine) [][]byte {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
