@@ -183,6 +183,11 @@ func main() {
 				faceClient.Blink()
 				faceClient.Emotion("focused")
 			}
+		} else {
+			// Nothing heard that Fritz should answer. Say so:
+			// silent ignores are indistinguishable from a dead
+			// pipeline in the log.
+			fmt.Println(">> (ignored — no wake phrase)")
 		}
 	}
 

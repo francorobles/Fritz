@@ -98,6 +98,41 @@ func TestTurnCollectorLatest(t *testing.T) {
 	}
 }
 
+// TestSplitUtteranceKeepsWake replays a real Pi log: one utterance
+// ("Hi, Fritz. What is the value of peso to dollar right now?") whose
+// partials arrive without any server completion. Whether the server
+// splits it across turnIds or restates it within one turn, local
+// endpointing must keep the wake phrase, or the tracker ignores the
+// turn and Fritz stays silent.
+func TestSplitUtteranceKeepsWake(t *testing.T) {
+	partials := []string{"Hi,", "Hi, Fritz.", "What is", "What is the value",
+		"What is the value of peso to dollar right now?"}
+	feed := func(c *TurnCollector, split bool) {
+		for i, p := range partials {
+			turn := "t1"
+			if split && i >= 2 {
+				turn = "t2" // server started a new turn mid-utterance
+			}
+			c.Observe(Event{Type: "transcript", TurnID: turn, Transcript: p})
+		}
+	}
+	for _, split := range []bool{false, true} {
+		c := &TurnCollector{}
+		feed(c, split)
+		text := c.TakeLatest()
+		if !WakeMatch(text) {
+			t.Errorf("split=%v: endpointed %q lost the wake phrase", split, text)
+			continue
+		}
+		tr := &Tracker{}
+		now := time.Unix(1000, 0)
+		req, ok := tr.Accept(text, now)
+		if !ok || !strings.Contains(req, "peso") {
+			t.Errorf("split=%v: request = %q, %v, want the peso question", split, req, ok)
+		}
+	}
+}
+
 // TestVoiceConcurrentUse hammers the collector and tracker from
 // several goroutines: both are now shared between the event callback
 // and the endpointing watcher, so they must be race-free (run with
