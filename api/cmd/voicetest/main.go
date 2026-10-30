@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/face"
+	"github.com/francorobles/fritz/api/internal/voice"
 )
 
 // transcribeURL is a var so tests can point it at a fake server.
@@ -44,32 +45,8 @@ func fail(format string, args ...any) {
 	failures++
 }
 
-// wakeAliases are the accepted wake spellings (see the fritz-voice
-// skill: collect real mis-hearings from logs and add them here).
-var wakeAliases = []string{"fritz", "fritts", "frits", "fritzz"}
-
-// wakeMatch reports whether a transcript contains the wake phrase.
-// Matching is case-insensitive and ignores punctuation, so
-// "Hi, Fritz!" and "hi fritz" both count.
-func wakeMatch(transcript string) bool {
-	cleaned := strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == ' ' {
-			return r
-		}
-		if r >= 'A' && r <= 'Z' {
-			return r + ('a' - 'A')
-		}
-		return ' '
-	}, transcript)
-	for _, word := range strings.Fields(cleaned) {
-		for _, alias := range wakeAliases {
-			if word == alias {
-				return true
-			}
-		}
-	}
-	return false
-}
+// Wake-phrase matching lives in internal/voice (voice.WakeMatch) so
+// this test and the realtime loop can never drift apart.
 
 // piperSampleRate reads audio.sample_rate from the voice's .onnx.json
 // (the file next to the .onnx model); Piper's raw output is only
@@ -379,7 +356,7 @@ func main() {
 	}
 	fmt.Printf("transcript: %q\n", transcript)
 
-	if !wakeMatch(transcript) {
+	if !voice.WakeMatch(transcript) {
 		if faceClient != nil {
 			faceClient.Emotion("skeptical")
 		}

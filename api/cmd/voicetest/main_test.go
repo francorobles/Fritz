@@ -11,35 +11,6 @@ import (
 	"testing"
 )
 
-func TestWakeMatch(t *testing.T) {
-	matches := []string{
-		"Hi Fritz",
-		"hi fritz",
-		"Hi, Fritz!",
-		"FRITZ",
-		"hey frits, are you there",
-		"Fritts",
-		"please tell Fritz I said hi",
-	}
-	for _, s := range matches {
-		if !wakeMatch(s) {
-			t.Errorf("wakeMatch(%q) = false, want true", s)
-		}
-	}
-	nonMatches := []string{
-		"",
-		"hello there",
-		"fritzgerald is here", // substring only, not a whole word
-		"hi fritzgerald",
-		"the weather is nice",
-	}
-	for _, s := range nonMatches {
-		if wakeMatch(s) {
-			t.Errorf("wakeMatch(%q) = true, want false", s)
-		}
-	}
-}
-
 func TestStepTranscribeAgainstFakeServer(t *testing.T) {
 	var gotAuth, gotRequest, gotAudio string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

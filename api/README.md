@@ -28,6 +28,15 @@ FRITZ_PIPER_VOICE=/opt/fritz/piper/en_US-lessac-medium.onnx \
 Run `scripts/check-hardware.sh` first if a step fails. Exit code is 0
 only when every step passes.
 
+For the realtime pipeline, `cmd/voicecheck` streams the mic to Muse
+Voice Transcribe live and prints partial/final transcripts plus
+`>> REQUEST` when the wake-phrase tracker would hand a turn to the
+agent:
+
+```sh
+MODEL_API_KEY=... go run ./cmd/voicecheck   # say "Hi Fritz", Ctrl-C to stop
+```
+
 ## Endpoints
 
 | Method | Path       | Description    |
@@ -39,6 +48,11 @@ only when every step passes.
 
 - `cmd/server/main.go` — entry point (`ADDR` env, default `:8080`)
 - `cmd/voicetest/main.go` — manual camera/mic/speaker test (above)
+- `cmd/voicecheck/main.go` — realtime transcription check (above)
+- `internal/voice/` — wake-phrase matching, ASR event parsing, the
+  turn tracker (wake-only and 8 s follow-up window), and the realtime
+  Muse Voice Transcribe WebSocket client (muted = silence, for
+  speaking without self-hearing)
 - `internal/httpapi/` — chi router and handlers
 - `internal/face/` — UDP client for the C++ face (`face.Client`:
   `Emotion`/`Standby`/`Gaze`/`GazeOff`/`Speaking`/`Blink`, plus the
