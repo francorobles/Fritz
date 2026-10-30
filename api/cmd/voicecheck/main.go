@@ -257,7 +257,12 @@ func main() {
 	respond := func(request string, heardAt time.Time) {
 		replyMu.Lock()
 		defer replyMu.Unlock()
-		defer tracker.MarkReplied(time.Now())
+		// The follow-up window must open when speaking FINISHES:
+		// MarkReplied(time.Now()) as a bare defer evaluates
+		// time.Now() immediately, so a long spoken confirmation
+		// prompt ate the whole 8 s window and a bare "Yes" was
+		// ignored as having no wake phrase.
+		defer func() { tracker.MarkReplied(time.Now()) }()
 
 		// A pending action waiting on a spoken yes is decided
 		// here in Go — the model never gets to interpret a yes.

@@ -12,13 +12,17 @@ import (
 )
 
 func TestIsAffirmative(t *testing.T) {
-	yes := []string{"yes", "Yes!", "yeah", "send it", "do it", "go ahead", "Fritz, yes", "ok"}
+	// Includes the exact utterances from the Pi loop report:
+	// the wake word lands anywhere in a spoken yes.
+	yes := []string{"yes", "Yes!", "yeah", "send it", "do it", "go ahead", "Fritz, yes", "ok",
+		"Hey Fritz, yes", "Hey Fritz yes", "hey yes", "yes hey yes", "Yes, Hey Fritz, yes", "yes yes", "okay Fritz, yes"}
 	for _, s := range yes {
 		if !IsAffirmative(s) {
 			t.Errorf("IsAffirmative(%q) = false, want true", s)
 		}
 	}
-	no := []string{"no", "yes but make it Saturday", "yesterday", "I said yes to Sarah", "", "create it Friday"}
+	no := []string{"no", "yes but make it Saturday", "yesterday", "I said yes to Sarah", "", "create it Friday",
+		"yes no", "hey", "Fritz", "yes please cancel that"}
 	for _, s := range no {
 		if IsAffirmative(s) {
 			t.Errorf("IsAffirmative(%q) = true, want false (strict whole-utterance)", s)
@@ -80,6 +84,16 @@ func TestConfirmerFlows(t *testing.T) {
 	// And afterwards there's nothing left to confirm.
 	if handled, _ := confirmer.HandleTurn(ctx, "yes"); handled {
 		t.Error("consumed action must not handle again")
+	}
+
+	// The Pi loop: "yes hey yes" (wake word sandwiched by the
+	// transcript) must execute, not decline-and-refile forever.
+	if _, err := store.Create("calendar_create", "create 'pay meralco'?", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	handled, reply = confirmer.HandleTurn(ctx, "yes hey yes")
+	if !handled || executed != 2 {
+		t.Errorf("sandwiched yes: handled=%v reply=%q executed=%d, want the action run", handled, reply, executed)
 	}
 
 	// Executor failure is spoken, not silent.

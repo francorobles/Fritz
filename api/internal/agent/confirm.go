@@ -35,30 +35,56 @@ var affirmatives = map[string]bool{
 	"create it": true, "book it": true,
 }
 
+// yesWords are single tokens that each mean yes on their own.
+// A turn made ONLY of these (plus the wake word) also counts:
+// people confirming out loud say "yes, hey Fritz, yes", and a
+// missed yes here doesn't just repeat — it declined the action
+// and the model filed a fresh one, looping forever.
+var yesWords = map[string]bool{
+	"yes": true, "yeah": true, "yep": true, "yup": true,
+	"ok": true, "okay": true, "sure": true,
+	"confirm": true, "confirmed": true, "approved": true,
+}
+
 // IsAffirmative reports whether a whole user turn is a clear
 // yes. The model never makes this call.
 func IsAffirmative(text string) bool {
-	return affirmatives[normalizeYes(text)]
+	s := normalizeYes(text)
+	if affirmatives[s] {
+		return true
+	}
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return false
+	}
+	for _, f := range fields {
+		if !yesWords[f] {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeYes(text string) string {
 	text = strings.ToLower(strings.TrimSpace(text))
-	// A wake word may survive into text channels; drop it.
-	text = strings.TrimPrefix(text, "fritz ")
-	text = strings.TrimPrefix(text, "hey fritz ")
 	var b strings.Builder
 	for _, r := range text {
 		if (r >= 'a' && r <= 'z') || r == ' ' {
 			b.WriteRune(r)
 		}
 	}
-	joined := strings.Join(strings.Fields(b.String()), " ")
-	// Stripping punctuation above can expose the wake word
-	// ("Fritz, yes" → "fritz yes"); drop it here too.
-	joined = strings.TrimPrefix(joined, "fritz ")
-	joined = strings.TrimPrefix(joined, "hey fritz ")
-	joined = strings.TrimPrefix(joined, "okay fritz ")
-	return joined
+	// Drop the wake word wherever it landed — leading ("Hey
+	// Fritz, yes"), trailing ("yes, Fritz"), or sandwiched by
+	// the transcript ("yes hey yes", after the wake phrase was
+	// partly stripped upstream). "hey" alone is never content.
+	kept := make([]string, 0, 4)
+	for _, tok := range strings.Fields(b.String()) {
+		if tok == "fritz" || tok == "hey" {
+			continue
+		}
+		kept = append(kept, tok)
+	}
+	return strings.Join(kept, " ")
 }
 
 // HandleTurn checks a fresh user turn against the pending
