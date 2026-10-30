@@ -51,6 +51,72 @@ func TestChatAgainstFakeServer(t *testing.T) {
 	}
 }
 
+func TestChatStreamAgainstFakeServer(t *testing.T) {
+	var gotStream bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Stream bool `json:"stream"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Errorf("request JSON: %v", err)
+		}
+		gotStream = req.Stream
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, ": comment lines are ignored\n\n")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"It is \"}}]}\n\n")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"9 AM.\"}}]}\n\n")
+		io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	old := BaseURL
+	BaseURL = server.URL
+	defer func() { BaseURL = old }()
+
+	client := &Client{APIKey: "test-key"}
+	var deltas []string
+	reply, err := client.ChatStream(context.Background(),
+		[]Message{{Role: "user", Content: "what time is it"}},
+		func(delta string) { deltas = append(deltas, delta) })
+	if err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	if reply != "It is 9 AM." {
+		t.Errorf("reply = %q", reply)
+	}
+	if strings.Join(deltas, "") != reply || len(deltas) != 2 {
+		t.Errorf("deltas = %q, want the reply in two pieces", deltas)
+	}
+	if !gotStream {
+		t.Error("request did not set stream:true")
+	}
+}
+
+func TestChatStreamReturnsPartialOnMidError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"It is \"}}]}\n\n")
+		io.WriteString(w, "data: not json\n\n")
+	}))
+	defer server.Close()
+
+	old := BaseURL
+	BaseURL = server.URL
+	defer func() { BaseURL = old }()
+
+	client := &Client{APIKey: "k"}
+	reply, err := client.ChatStream(context.Background(),
+		[]Message{{Role: "user", Content: "hi"}},
+		func(delta string) {})
+	if err == nil {
+		t.Fatal("expected an error on a malformed chunk")
+	}
+	if reply != "It is " {
+		t.Errorf("partial reply = %q, want what arrived before the error", reply)
+	}
+}
+
 func TestChatRetriesOnceOn500(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

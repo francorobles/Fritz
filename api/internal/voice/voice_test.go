@@ -233,6 +233,80 @@ func TestSpeakUsesOnePipeline(t *testing.T) {
 	}
 }
 
+func TestSplitterIncremental(t *testing.T) {
+	var s Splitter
+	// Nothing completes mid-sentence, even across delta boundaries.
+	if out := s.Feed("Hi the"); len(out) != 0 {
+		t.Errorf("Feed mid-sentence = %q, want nothing yet", out)
+	}
+	if out := s.Feed("re. It"); len(out) != 1 || out[0] != "Hi there." {
+		t.Errorf("Feed across boundary = %q, want [Hi there.]", out)
+	}
+	// No whitespace after the period: not a boundary (decimals,
+	// abbreviations-in-progress stay whole until more arrives).
+	if out := s.Feed(" costs 3.50"); len(out) != 0 {
+		t.Errorf("Feed decimal = %q, want nothing yet", out)
+	}
+	if out := s.Feed(" pesos."); len(out) != 0 {
+		t.Errorf("Feed trailing period = %q, want nothing until flush", out)
+	}
+	if got := s.Flush(); got != "It costs 3.50 pesos." {
+		t.Errorf("Flush = %q", got)
+	}
+	if got := s.Flush(); got != "" {
+		t.Errorf("Flush twice = %q, want empty", got)
+	}
+}
+
+// TestSpeakerFeedsLines checks that one Speaker drives exactly one
+// piper process and that Say delivers each sentence as a stdin line.
+func TestSpeakerFeedsLines(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "piper-calls")
+	stdinLog := filepath.Join(dir, "piper-stdin")
+	piperSh := "#!/bin/sh\necho x >> " + calls + "\ncat > " + stdinLog + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "piper"), []byte(piperSh), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "aplay"), []byte("#!/bin/sh\ncat > /dev/null\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	speaker, err := StartSpeaker(ctx, filepath.Join(dir, "voice.onnx"))
+	if err != nil {
+		t.Fatalf("StartSpeaker: %v", err)
+	}
+	for _, sentence := range []string{"Hi there.", "It is 9 AM!", "Anything else?"} {
+		if err := speaker.Say(sentence); err != nil {
+			t.Fatalf("Say: %v", err)
+		}
+	}
+	if err := speaker.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	data, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("fake piper never ran: %v", err)
+	}
+	if n := strings.Count(string(data), "x"); n != 1 {
+		t.Errorf("piper invocations = %d, want 1", n)
+	}
+	raw, err := os.ReadFile(stdinLog)
+	if err != nil {
+		t.Fatalf("fake piper got no stdin: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 3 || lines[0] != "Hi there." || lines[2] != "Anything else?" {
+		t.Errorf("piper stdin lines = %q, want the 3 sentences", lines)
+	}
+	if _, err := StartSpeaker(ctx, ""); err == nil {
+		t.Error("StartSpeaker with no voice path must error")
+	}
+}
+
 func TestTracker(t *testing.T) {
 	now := time.Unix(1000, 0)
 	tr := &Tracker{}

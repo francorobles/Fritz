@@ -4,12 +4,14 @@
 package meta
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -45,6 +47,7 @@ func (c *Client) httpClient() *http.Client {
 type chatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
+	Stream   bool      `json:"stream,omitempty"`
 }
 
 type chatResponse struct {
@@ -83,6 +86,107 @@ func (c *Client) Chat(ctx context.Context, messages []Message) (string, error) {
 		}
 	}
 	return "", lastErr
+}
+
+// chatChunk is one SSE data line of a streaming chat response.
+type chatChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+	} `json:"choices"`
+}
+
+// ChatStream sends messages to Muse Spark with streaming enabled,
+// calls emit for each content delta as it arrives, and returns the
+// full reply text. emit must be non-nil; it runs on the caller's
+// goroutine, so slow handlers stall the stream (that is how the
+// voice loop paces speech against synthesis).
+//
+// Like Chat it retries 429/5xx once — but only when nothing was
+// received yet. A stream that dies mid-reply returns the partial
+// text with the error, so callers can still use what arrived.
+func (c *Client) ChatStream(ctx context.Context, messages []Message, emit func(delta string)) (string, error) {
+	body, err := json.Marshal(chatRequest{Model: ModelSpark, Messages: messages, Stream: true})
+	if err != nil {
+		return "", err
+	}
+	var lastErr error
+	var partial string
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return partial, ctx.Err()
+			case <-time.After(600 * time.Millisecond):
+			}
+		}
+		text, retryable, err := c.streamOnce(ctx, body, emit)
+		if err == nil {
+			return text, nil
+		}
+		partial, lastErr = text, err
+		if !retryable {
+			return partial, err
+		}
+	}
+	return partial, lastErr
+}
+
+func (c *Client) streamOnce(ctx context.Context, body []byte, emit func(delta string)) (text string, retryable bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, BaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", false, fmt.Errorf("meta: chat stream request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		retry := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
+		return "", retry, fmt.Errorf("meta: chat stream HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var full strings.Builder
+	received := false
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1<<20)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") || !strings.HasPrefix(line, "data:") {
+			continue // blank, comment, or another SSE field
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			break
+		}
+		var chunk chatChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return full.String(), false, fmt.Errorf("meta: chat stream chunk: %w", err)
+		}
+		for _, choice := range chunk.Choices {
+			if choice.Delta.Content == "" {
+				continue
+			}
+			received = true
+			full.WriteString(choice.Delta.Content)
+			emit(choice.Delta.Content)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		// A failure before any content is worth one retry, like a
+		// failed non-streaming call; afterwards the caller speaks
+		// the partial reply instead.
+		return full.String(), !received, fmt.Errorf("meta: chat stream read: %w", err)
+	}
+	return full.String(), false, nil
 }
 
 func (c *Client) chatOnce(ctx context.Context, body []byte) (reply string, retryable bool, err error) {

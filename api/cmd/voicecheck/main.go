@@ -74,10 +74,13 @@ func main() {
 	chat := &meta.Client{APIKey: apiKey}
 	piperVoice := os.Getenv("FRITZ_PIPER_VOICE")
 
-	// respond asks Muse Spark for a reply and speaks it. Replies are
-	// serialized, the mic is muted while Fritz speaks (plus 700 ms for
-	// Bluetooth delay, so it doesn't hear itself through the Echo),
-	// and the follow-up window opens when speaking finishes.
+	// respond asks Muse Spark for a reply and speaks it. The reply
+	// streams: each finished sentence is spoken as it arrives, so
+	// the first words start while the rest is still generating.
+	// Replies are serialized, the mic is muted while Fritz speaks
+	// (plus 700 ms for Bluetooth delay, so it doesn't hear itself
+	// through the Echo), and the follow-up window opens when
+	// speaking finishes.
 	var history []meta.Message
 	var replyMu sync.Mutex
 	respond := func(request string) {
@@ -100,44 +103,89 @@ func main() {
 
 		fmt.Println("(thinking...)")
 		chatStart := time.Now()
-		reply, err := chat.Chat(ctx, messages)
-		if err != nil {
-			fmt.Println("reply error:", err)
+		// Start the speaker before the first token arrives so
+		// Piper's model load overlaps the reply's first sentence.
+		// Without FRITZ_PIPER_VOICE the reply streams to the
+		// console only.
+		speaker, speakerErr := voice.StartSpeaker(ctx, piperVoice)
+		if speakerErr != nil {
+			fmt.Println("speaker unavailable (reply will be printed, not spoken):", speakerErr)
+			speaker = nil
+		}
+		var firstSpokenAt time.Time
+		say := func(sentence string) {
+			if speaker == nil {
+				return
+			}
+			if firstSpokenAt.IsZero() {
+				firstSpokenAt = time.Now()
+				fmt.Printf("[first sentence after %s]\n", firstSpokenAt.Sub(chatStart).Round(time.Millisecond))
+				if faceClient != nil {
+					faceClient.Emotion("happy")
+				}
+			}
+			if err := speaker.Say(sentence); err != nil {
+				fmt.Println("speaker error (rest of reply printed, not spoken):", err)
+				_ = speaker.Close()
+				speaker = nil
+			}
+		}
+		if speaker != nil {
+			client.Muted.Store(true)
+			if faceClient != nil {
+				faceClient.Speaking(true)
+			}
+			defer func() {
+				if speaker != nil {
+					if err := speaker.Close(); err != nil {
+						fmt.Println("speaker error (reply was printed above):", err)
+					} else if !firstSpokenAt.IsZero() {
+						fmt.Printf("[spoken in %s]\n", time.Since(firstSpokenAt).Round(time.Millisecond))
+					}
+				}
+				// Bluetooth tail: keep muting briefly after
+				// playback ends.
+				select {
+				case <-ctx.Done():
+				case <-time.After(700 * time.Millisecond):
+				}
+				client.Muted.Store(false)
+				if faceClient != nil {
+					faceClient.Speaking(false)
+				}
+			}()
+		}
+
+		var splitter voice.Splitter
+		var reply strings.Builder
+		// The returned full text duplicates what the callback
+		// accumulated; the stream error is what matters here.
+		_, streamErr := chat.ChatStream(ctx, messages, func(delta string) {
+			reply.WriteString(delta)
+			for _, sentence := range splitter.Feed(delta) {
+				say(sentence)
+			}
+		})
+		if tail := splitter.Flush(); tail != "" {
+			say(tail)
+		}
+		text := strings.TrimSpace(reply.String())
+		if streamErr != nil && text == "" {
+			fmt.Println("reply error:", streamErr)
 			if faceClient != nil {
 				faceClient.Emotion("skeptical")
 			}
 			return
 		}
-		reply = strings.TrimSpace(reply)
-		fmt.Printf("Fritz: %s  [model took %s]\n", reply, time.Since(chatStart).Round(time.Millisecond))
+		if streamErr != nil {
+			fmt.Println("reply error (speaking the partial reply):", streamErr)
+		}
+		fmt.Printf("Fritz: %s  [model took %s]\n", text, time.Since(chatStart).Round(time.Millisecond))
 		history = append(history,
 			meta.Message{Role: "user", Content: request},
-			meta.Message{Role: "assistant", Content: reply})
+			meta.Message{Role: "assistant", Content: text})
 		if len(history) > 20 { // keep roughly the last 10 turns
 			history = history[len(history)-20:]
-		}
-
-		if faceClient != nil {
-			faceClient.Emotion("happy")
-			faceClient.Speaking(true)
-		}
-		client.Muted.Store(true)
-		speakStart := time.Now()
-		speakErr := voice.Speak(ctx, piperVoice, reply)
-		if speakErr == nil {
-			fmt.Printf("[spoken in %s]\n", time.Since(speakStart).Round(time.Millisecond))
-		}
-		// Bluetooth tail: keep muting briefly after playback ends.
-		select {
-		case <-ctx.Done():
-		case <-time.After(700 * time.Millisecond):
-		}
-		client.Muted.Store(false)
-		if faceClient != nil {
-			faceClient.Speaking(false)
-		}
-		if speakErr != nil {
-			fmt.Println("speaker error (reply was printed above):", speakErr)
 		}
 	}
 	// handleTurn runs one completed turn through the wake tracker.
