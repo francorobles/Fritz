@@ -167,6 +167,32 @@ func stepRecord(ctx context.Context, seconds int) (string, error) {
 	return tmp.Name(), nil
 }
 
+// wavPeak returns the largest |sample| in a 16-bit PCM WAV file, so a
+// silent recording can be told apart from a transcription problem
+// before anything is sent to the API.
+func wavPeak(wavPath string) (int, error) {
+	data, err := os.ReadFile(wavPath)
+	if err != nil {
+		return 0, err
+	}
+	i := bytes.Index(data, []byte("data"))
+	if i < 0 || i+8 > len(data) {
+		return 0, fmt.Errorf("no data chunk in %s", wavPath)
+	}
+	raw := data[i+8:]
+	peak := 0
+	for j := 0; j+1 < len(raw); j += 2 {
+		s := int(int16(uint16(raw[j]) | uint16(raw[j+1])<<8))
+		if s < 0 {
+			s = -s
+		}
+		if s > peak {
+			peak = s
+		}
+	}
+	return peak, nil
+}
+
 func stepTranscribe(ctx context.Context, wavPath, apiKey string) (string, error) {
 	audio, err := os.Open(wavPath)
 	if err != nil {
@@ -216,11 +242,32 @@ func stepTranscribe(ctx context.Context, wavPath, apiKey string) (string, error)
 	}
 	var out struct {
 		Transcript string `json:"transcript"`
+		Turns      []struct {
+			Transcript string `json:"transcript"`
+		} `json:"turns"`
 	}
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		return "", fmt.Errorf("transcribe response: %w", err)
 	}
-	return out.Transcript, nil
+	transcript := strings.TrimSpace(out.Transcript)
+	if transcript == "" && len(out.Turns) > 0 {
+		// Some responses carry the text only in per-turn transcripts.
+		parts := make([]string, 0, len(out.Turns))
+		for _, turn := range out.Turns {
+			if t := strings.TrimSpace(turn.Transcript); t != "" {
+				parts = append(parts, t)
+			}
+		}
+		transcript = strings.Join(parts, " ")
+	}
+	if transcript == "" {
+		raw := strings.TrimSpace(string(respBody))
+		if len(raw) > 600 {
+			raw = raw[:600] + "..."
+		}
+		fmt.Printf("note: transcription returned no text; raw response: %s\n", raw)
+	}
+	return transcript, nil
 }
 
 func stepSpeak(ctx context.Context, text string) error {
@@ -292,7 +339,12 @@ func main() {
 		fmt.Printf("\n%d step(s) FAILED\n", failures)
 		os.Exit(1)
 	}
-	defer os.Remove(wavPath)
+	keepWav := false
+	defer func() {
+		if !keepWav {
+			os.Remove(wavPath)
+		}
+	}()
 	micName := os.Getenv("FRITZ_MIC")
 	if micName == "" {
 		micName = "pipewire"
@@ -301,6 +353,22 @@ func main() {
 		pass("microphone: recorded %d bytes of WAV (arecord -D %s)", info.Size(), micName)
 	} else {
 		fail("microphone: recording is empty (%v)", err)
+	}
+
+	// A full-size recording can still be silent (wrong source, muted
+	// mic). Check the peak level before blaming transcription.
+	if peak, err := wavPeak(wavPath); err != nil {
+		fail("microphone: %v", err)
+	} else if peak <= 200 {
+		keepWav = true
+		fail("microphone: recording is SILENT (peak amplitude %d/32767) — "+
+			"wrong PipeWire source or muted mic. Kept the recording at %s; "+
+			"play it back with: pw-play %s ; check the source with: wpctl status "+
+			"and wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 1.0", peak, wavPath, wavPath)
+		fmt.Printf("\n%d step(s) FAILED\n", failures)
+		os.Exit(1)
+	} else {
+		pass("microphone: audio is non-silent (peak amplitude %d/32767)", peak)
 	}
 
 	transcript, err := stepTranscribe(ctx, wavPath, apiKey)
@@ -315,7 +383,8 @@ func main() {
 		if faceClient != nil {
 			faceClient.Emotion("skeptical")
 		}
-		fail("wake phrase: %q does not contain \"Fritz\" — try again, closer to the mic", transcript)
+		keepWav = true
+		fail("wake phrase: %q does not contain \"Fritz\" — recording kept at %s (listen with: pw-play %s)", transcript, wavPath, wavPath)
 		fmt.Printf("\n%d step(s) FAILED\n", failures)
 		os.Exit(1)
 	}

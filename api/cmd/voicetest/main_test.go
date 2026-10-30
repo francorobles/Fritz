@@ -88,6 +88,46 @@ func TestStepTranscribeAgainstFakeServer(t *testing.T) {
 	}
 }
 
+func TestWavPeak(t *testing.T) {
+	makeWav := func(samples ...int16) string {
+		path := filepath.Join(t.TempDir(), "t.wav")
+		data := []byte("RIFF\x00\x00\x00\x00WAVEfmt data")
+		for _, s := range samples {
+			u := uint16(s)
+			data = append(data, byte(u), byte(u>>8))
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	if peak, err := wavPeak(makeWav(0, 100, -5000, 300)); err != nil || peak != 5000 {
+		t.Errorf("wavPeak = %d, %v; want 5000", peak, err)
+	}
+	if peak, err := wavPeak(makeWav(0, 0, 0)); err != nil || peak != 0 {
+		t.Errorf("wavPeak silent = %d, %v; want 0", peak, err)
+	}
+}
+
+func TestStepTranscribeTurnsFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, `{"transcript":"","turns":[{"transcript":"Hi"},{"transcript":"Fritz"}]}`)
+	}))
+	defer server.Close()
+	old := transcribeURL
+	transcribeURL = server.URL
+	defer func() { transcribeURL = old }()
+
+	wav := filepath.Join(t.TempDir(), "t.wav")
+	if err := os.WriteFile(wav, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := stepTranscribe(context.Background(), wav, "k")
+	if err != nil || got != "Hi Fritz" {
+		t.Errorf("stepTranscribe turns fallback = %q, %v; want \"Hi Fritz\"", got, err)
+	}
+}
+
 func TestPiperSampleRate(t *testing.T) {
 	dir := t.TempDir()
 	voice := filepath.Join(dir, "voice.onnx")
