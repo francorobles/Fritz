@@ -1,14 +1,14 @@
-// Command voicecheck streams the microphone to Muse Voice Transcribe
-// in realtime and prints what Fritz hears. It is the first manual test
-// for the voice pipeline on the Pi (see the fritz-voice skill):
+// Command voicecheck is the realtime voice loop on the Pi: it streams
+// the microphone to Muse Voice Transcribe, and when the wake-phrase
+// tracker accepts a turn it asks Muse Spark for a reply and speaks it
+// with Piper through the speaker (see the fritz-voice skill):
 //
-//	MODEL_API_KEY=... go run ./cmd/voicecheck
+//	MODEL_API_KEY=... FRITZ_PIPER_VOICE=/opt/fritz/piper/<voice>.onnx \
+//	  go run ./cmd/voicecheck
 //
-// Speak normally; lines show partials as they arrive, completed turns,
-// and ">> REQUEST" when the wake-phrase tracker would hand a turn to
-// the agent (say "Hi Fritz", then ask something within 8 s without the
-// wake phrase). Ctrl-C stops. No audio leaves the process except to
-// the transcription API, and nothing is recorded to disk.
+// Say "Hi Fritz, what time is it?", pause, and Fritz answers out loud.
+// Follow-up questions within 8 s need no wake phrase. Ctrl-C stops.
+// Without FRITZ_PIPER_VOICE the reply is only printed, not spoken.
 package main
 
 import (
@@ -17,9 +17,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/face"
+	"github.com/francorobles/fritz/api/internal/meta"
 	"github.com/francorobles/fritz/api/internal/voice"
 )
 
@@ -56,6 +59,9 @@ func main() {
 	}
 
 	fmt.Printf("voicecheck: streaming mic (%s) — say \"Hi Fritz\", Ctrl-C to stop\n", mic)
+	if os.Getenv("FRITZ_PIPER_VOICE") == "" {
+		fmt.Println("note: FRITZ_PIPER_VOICE unset — replies will be printed, not spoken")
+	}
 	if os.Getenv("FRITZ_VOICE_DEBUG") == "1" {
 		fmt.Println("debug: event logging ON — every API event will print as [event ...]")
 	} else {
@@ -65,6 +71,69 @@ func main() {
 	collector := &voice.TurnCollector{}
 	debug := os.Getenv("FRITZ_VOICE_DEBUG") == "1"
 	client := &voice.Client{APIKey: apiKey}
+	chat := &meta.Client{APIKey: apiKey}
+	piperVoice := os.Getenv("FRITZ_PIPER_VOICE")
+
+	// respond asks Muse Spark for a reply and speaks it. Replies are
+	// serialized, the mic is muted while Fritz speaks (plus 700 ms for
+	// Bluetooth delay, so it doesn't hear itself through the Echo),
+	// and the follow-up window opens when speaking finishes.
+	var history []meta.Message
+	var replyMu sync.Mutex
+	respond := func(request string) {
+		replyMu.Lock()
+		defer replyMu.Unlock()
+		defer tracker.MarkReplied(time.Now())
+
+		if faceClient != nil {
+			faceClient.Emotion("thinking")
+		}
+		now := time.Now()
+		messages := []meta.Message{
+			{Role: "system", Content: fmt.Sprintf(
+				"You are Fritz, a warm desk companion. Your replies are spoken aloud: "+
+					"answer in 1-3 short sentences, no markdown, no lists, no URLs. "+
+					"The current local time is %s.", now.Format("Mon 2 Jan 2006, 3:04 PM"))},
+		}
+		messages = append(messages, history...)
+		messages = append(messages, meta.Message{Role: "user", Content: request})
+
+		reply, err := chat.Chat(ctx, messages)
+		if err != nil {
+			fmt.Println("reply error:", err)
+			if faceClient != nil {
+				faceClient.Emotion("skeptical")
+			}
+			return
+		}
+		reply = strings.TrimSpace(reply)
+		fmt.Printf("Fritz: %s\n", reply)
+		history = append(history,
+			meta.Message{Role: "user", Content: request},
+			meta.Message{Role: "assistant", Content: reply})
+		if len(history) > 20 { // keep roughly the last 10 turns
+			history = history[len(history)-20:]
+		}
+
+		if faceClient != nil {
+			faceClient.Emotion("happy")
+			faceClient.Speaking(true)
+		}
+		client.Muted.Store(true)
+		speakErr := voice.Speak(ctx, piperVoice, reply)
+		// Bluetooth tail: keep muting briefly after playback ends.
+		select {
+		case <-ctx.Done():
+		case <-time.After(700 * time.Millisecond):
+		}
+		client.Muted.Store(false)
+		if faceClient != nil {
+			faceClient.Speaking(false)
+		}
+		if speakErr != nil {
+			fmt.Println("speaker error (reply was printed above):", speakErr)
+		}
+	}
 	// handleTurn runs one completed turn through the wake tracker.
 	// The same turn can complete twice in the event stream (a final
 	// transcript, then speechComplete), so identical text within a
@@ -83,12 +152,9 @@ func main() {
 		if request, ok := tracker.Accept(text, time.Now()); ok {
 			if faceClient != nil {
 				faceClient.Blink()
-				faceClient.Emotion("happy")
 			}
 			fmt.Printf(">> REQUEST: %s\n", request)
-			// A real agent would reply now; the follow-up window
-			// opens as if it had.
-			tracker.MarkReplied(time.Now())
+			respond(request) // speaks the reply; opens the follow-up window
 		} else if voice.WakeMatch(text) {
 			fmt.Println(">> (wake phrase heard — next turn is the request)")
 			if faceClient != nil {

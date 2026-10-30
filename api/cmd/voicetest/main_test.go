@@ -98,17 +98,3 @@ func TestStepTranscribeTurnsFallback(t *testing.T) {
 		t.Errorf("stepTranscribe turns fallback = %q, %v; want \"Hi Fritz\"", got, err)
 	}
 }
-
-func TestPiperSampleRate(t *testing.T) {
-	dir := t.TempDir()
-	voice := filepath.Join(dir, "voice.onnx")
-	if err := os.WriteFile(voice+".json", []byte(`{"audio":{"sample_rate":44100}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := piperSampleRate(voice); got != 44100 {
-		t.Errorf("piperSampleRate with json = %d, want 44100", got)
-	}
-	if got := piperSampleRate(filepath.Join(dir, "missing.onnx")); got != 22050 {
-		t.Errorf("piperSampleRate without json = %d, want 22050 fallback", got)
-	}
-}

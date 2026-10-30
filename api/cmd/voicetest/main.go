@@ -48,24 +48,8 @@ func fail(format string, args ...any) {
 // Wake-phrase matching lives in internal/voice (voice.WakeMatch) so
 // this test and the realtime loop can never drift apart.
 
-// piperSampleRate reads audio.sample_rate from the voice's .onnx.json
-// (the file next to the .onnx model); Piper's raw output is only
-// intelligible when aplay uses exactly this rate.
-func piperSampleRate(voicePath string) int {
-	data, err := os.ReadFile(voicePath + ".json")
-	if err != nil {
-		return 22050
-	}
-	var cfg struct {
-		Audio struct {
-			SampleRate int `json:"sample_rate"`
-		} `json:"audio"`
-	}
-	if json.Unmarshal(data, &cfg) == nil && cfg.Audio.SampleRate > 0 {
-		return cfg.Audio.SampleRate
-	}
-	return 22050
-}
+// Piper speech lives in internal/voice (voice.Speak) so this test
+// and the realtime loop share one implementation.
 
 func cameraDevice() string {
 	if dev := os.Getenv("FRITZ_CAMERA_DEVICE"); dev != "" {
@@ -247,36 +231,6 @@ func stepTranscribe(ctx context.Context, wavPath, apiKey string) (string, error)
 	return transcript, nil
 }
 
-func stepSpeak(ctx context.Context, text string) error {
-	voice := os.Getenv("FRITZ_PIPER_VOICE")
-	if voice == "" {
-		return fmt.Errorf("FRITZ_PIPER_VOICE is unset (path to the Piper .onnx voice)")
-	}
-	rate := piperSampleRate(voice)
-	piper := exec.CommandContext(ctx, "piper", "--model", voice, "--output-raw")
-	piper.Stdin = strings.NewReader(text)
-	aplay := exec.CommandContext(ctx, "aplay", "-D", "pipewire",
-		"-r", fmt.Sprint(rate), "-f", "S16_LE", "-c", "1", "-t", "raw", "-q")
-	pipe, err := piper.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	aplay.Stdin = pipe
-	if err := piper.Start(); err != nil {
-		return fmt.Errorf("piper: %w (is piper installed?)", err)
-	}
-	if err := aplay.Start(); err != nil {
-		return fmt.Errorf("aplay: %w (is alsa-utils installed?)", err)
-	}
-	if err := piper.Wait(); err != nil {
-		return fmt.Errorf("piper: %w", err)
-	}
-	if err := aplay.Wait(); err != nil {
-		return fmt.Errorf("aplay: %w", err)
-	}
-	return nil
-}
-
 func main() {
 	seconds := flag.Int("listen", 5, "seconds to record")
 	reply := flag.String("reply", "Hi, I heard you. Fritz is awake and listening.", "canned reply Fritz speaks when the wake phrase matches")
@@ -372,7 +326,7 @@ func main() {
 		faceClient.Emotion("happy")
 		faceClient.Speaking(true)
 	}
-	if err := stepSpeak(ctx, *reply); err != nil {
+	if err := voice.Speak(ctx, os.Getenv("FRITZ_PIPER_VOICE"), *reply); err != nil {
 		if faceClient != nil {
 			faceClient.Speaking(false)
 		}

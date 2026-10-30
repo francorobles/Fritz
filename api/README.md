@@ -28,13 +28,15 @@ FRITZ_PIPER_VOICE=/opt/fritz/piper/en_US-lessac-medium.onnx \
 Run `scripts/check-hardware.sh` first if a step fails. Exit code is 0
 only when every step passes.
 
-For the realtime pipeline, `cmd/voicecheck` streams the mic to Muse
-Voice Transcribe live and prints partial/final transcripts plus
-`>> REQUEST` when the wake-phrase tracker would hand a turn to the
-agent:
+For the realtime pipeline, `cmd/voicecheck` is the full voice loop:
+it streams the mic to Muse Voice Transcribe live, and on
+"Hi Fritz, ..." it asks Muse Spark for a reply and speaks it with
+Piper through the speaker (face: thinking → happy, mic muted while
+speaking). Follow-ups within 8 s need no wake phrase:
 
 ```sh
-MODEL_API_KEY=... go run ./cmd/voicecheck   # say "Hi Fritz", Ctrl-C to stop
+MODEL_API_KEY=... FRITZ_PIPER_VOICE=/opt/fritz/piper/<voice>.onnx \
+  go run ./cmd/voicecheck   # Ctrl-C to stop
 ```
 
 ## Endpoints
@@ -50,9 +52,11 @@ MODEL_API_KEY=... go run ./cmd/voicecheck   # say "Hi Fritz", Ctrl-C to stop
 - `cmd/voicetest/main.go` — manual camera/mic/speaker test (above)
 - `cmd/voicecheck/main.go` — realtime transcription check (above)
 - `internal/voice/` — wake-phrase matching, ASR event parsing, the
-  turn tracker (wake-only and 8 s follow-up window), and the realtime
+  turn tracker (wake-only and 8 s follow-up window), the realtime
   Muse Voice Transcribe WebSocket client (muted = silence, for
-  speaking without self-hearing)
+  speaking without self-hearing), and Piper speech
+- `internal/meta/` — Meta Model API client (Muse Spark chat; one retry
+  on 429/5xx)
 - `internal/httpapi/` — chi router and handlers
 - `internal/face/` — UDP client for the C++ face (`face.Client`:
   `Emotion`/`Standby`/`Gaze`/`GazeOff`/`Speaking`/`Blink`, plus the

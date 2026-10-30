@@ -1,6 +1,8 @@
 package voice
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -64,6 +66,36 @@ func TestTurnCollector(t *testing.T) {
 	// Turns are forgotten after completion.
 	if got := c.Complete(Event{Type: "speechComplete", TurnID: "t2"}); got != "" {
 		t.Errorf("Complete twice = %q, want empty", got)
+	}
+}
+
+func TestPiperSampleRate(t *testing.T) {
+	dir := t.TempDir()
+	voice := filepath.Join(dir, "voice.onnx")
+	if err := os.WriteFile(voice+".json", []byte(`{"audio":{"sample_rate":44100}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := PiperSampleRate(voice); got != 44100 {
+		t.Errorf("PiperSampleRate with json = %d, want 44100", got)
+	}
+	if got := PiperSampleRate(filepath.Join(dir, "missing.onnx")); got != 22050 {
+		t.Errorf("PiperSampleRate without json = %d, want 22050 fallback", got)
+	}
+}
+
+func TestSplitSentences(t *testing.T) {
+	got := splitSentences("Hi there. It is 9 AM! Anything else?")
+	want := []string{"Hi there.", "It is 9 AM!", "Anything else?"}
+	if len(got) != len(want) {
+		t.Fatalf("splitSentences = %q", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("sentence %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if got := splitSentences("no punctuation"); len(got) != 1 || got[0] != "no punctuation" {
+		t.Errorf("splitSentences no-punct = %q", got)
 	}
 }
 
