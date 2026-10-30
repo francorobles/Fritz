@@ -6,6 +6,7 @@ require github.com/go-chi/chi/v5 v5.2.1
 
 require (
 	github.com/gorilla/websocket v1.5.3
+	golang.org/x/image v0.47.0
 	modernc.org/sqlite v1.61.0
 )
 

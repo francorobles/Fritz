@@ -24,6 +24,7 @@ import (
 	"github.com/francorobles/fritz/api/internal/face"
 	"github.com/francorobles/fritz/api/internal/memory"
 	"github.com/francorobles/fritz/api/internal/meta"
+	"github.com/francorobles/fritz/api/internal/vision"
 	"github.com/francorobles/fritz/api/internal/voice"
 )
 
@@ -94,6 +95,30 @@ func main() {
 	client := &voice.Client{APIKey: apiKey}
 	chat := &meta.Client{APIKey: apiKey}
 	piperVoice := os.Getenv("FRITZ_PIPER_VOICE")
+
+	// Vision: the eyes follow your face (SAM 3.1 at ~1 Hz).
+	// Optional — voice keeps working without a camera or face.
+	if vision.CameraOff() {
+		fmt.Println("vision: camera off (FRITZ_CAMERA=off) — eyes will not follow")
+	} else if faceClient == nil {
+		fmt.Println("vision: face unavailable — eyes will not follow")
+	} else {
+		frames := vision.NewFrameSource(os.Getenv("FRITZ_CAMERA_DEVICE"))
+		frames.Logf = func(msg string) { fmt.Println(msg) }
+		go frames.Run(ctx)
+		follow := vision.NewTracker(chat, faceClient, frames, vision.ConfigFromEnv())
+		follow.Logf = func(msg string) { fmt.Println(msg) }
+		go follow.Run(ctx)
+		go func() {
+			for ev := range follow.Events {
+				if ev.Present {
+					fmt.Println("vision: eyes on you")
+				} else {
+					fmt.Println("vision: eyes released (standby wander)")
+				}
+			}
+		}()
+	}
 
 	// respond asks Muse Spark for a reply and speaks it. The reply
 	// streams: each finished sentence is spoken as it arrives, so
