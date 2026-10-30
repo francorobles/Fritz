@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -37,13 +38,57 @@ type Message struct {
 	// questions about what the camera sees. Never set on history
 	// or assistant messages.
 	Image []byte `json:"-"`
+
+	// ToolCalls is set on an assistant message that asked for tools;
+	// it must be sent back verbatim before the tool results (the
+	// API returns 400 otherwise). ToolCallID ties a role "tool"
+	// message to the call it answers.
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// ToolCall is one function call the model asked for. Arguments is
+// a JSON string, not guaranteed to match the schema: validate it.
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"` // "function"
+	Function FunctionCall `json:"function"`
+}
+
+// FunctionCall names the function and carries its JSON arguments.
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// Tool is one function the model may call. Name must match
+// ^[a-zA-Z0-9_.-]+$ with at most one dot; Parameters is a JSON
+// Schema object.
+type Tool struct {
+	Name        string
+	Description string
+	Parameters  any
+}
+
+func (t Tool) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":        t.Name,
+			"description": t.Description,
+			"parameters":  t.Parameters,
+		},
+	})
 }
 
 // wireMessage is the on-the-wire chat message. Content is the
-// plain string normally, or text+image parts with a photo.
+// plain string normally, or text+image parts with a photo, or null
+// on an assistant message that only calls tools.
 type wireMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	Role       string     `json:"role"`
+	Content    any        `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
 type wireImageURL struct {
@@ -59,16 +104,19 @@ type wireContentPart struct {
 func toWireMessages(messages []Message) []wireMessage {
 	out := make([]wireMessage, len(messages))
 	for i, m := range messages {
+		out[i] = wireMessage{Role: m.Role, Content: m.Content, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID}
+		if len(m.ToolCalls) > 0 && m.Content == "" {
+			out[i].Content = nil
+		}
 		if len(m.Image) == 0 {
-			out[i] = wireMessage{Role: m.Role, Content: m.Content}
 			continue
 		}
-		out[i] = wireMessage{Role: m.Role, Content: []wireContentPart{
+		out[i].Content = []wireContentPart{
 			{Type: "text", Text: m.Content},
 			{Type: "image_url", ImageURL: &wireImageURL{
 				URL: "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(m.Image),
 			}},
-		}}
+		}
 	}
 	return out
 }
@@ -91,6 +139,8 @@ type chatRequest struct {
 	Messages       []wireMessage `json:"messages"`
 	Stream         bool          `json:"stream,omitempty"`
 	ResponseFormat any           `json:"response_format,omitempty"`
+	Tools          []Tool        `json:"tools,omitempty"`
+	ToolChoice     string        `json:"tool_choice,omitempty"` // only "auto" is accepted
 }
 
 type chatResponse struct {
@@ -160,9 +210,28 @@ func (c *Client) chatWithFormat(ctx context.Context, model string, messages []Me
 type chatChunk struct {
 	Choices []struct {
 		Delta struct {
-			Content string `json:"content"`
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
 		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+}
+
+// StreamResult is one streamed reply: the text that was emitted,
+// plus any tool calls the model asked for (assembled from their
+// deltas, in index order).
+type StreamResult struct {
+	Text         string
+	ToolCalls    []ToolCall
+	FinishReason string
 }
 
 // ChatStream sends messages to Muse Spark with streaming enabled,
@@ -175,12 +244,26 @@ type chatChunk struct {
 // received yet. A stream that dies mid-reply returns the partial
 // text with the error, so callers can still use what arrived.
 func (c *Client) ChatStream(ctx context.Context, messages []Message, emit func(delta string)) (string, error) {
-	body, err := json.Marshal(chatRequest{Model: ModelSpark, Messages: toWireMessages(messages), Stream: true})
+	res, err := c.ChatStreamTools(ctx, messages, nil, emit)
+	return res.Text, err
+}
+
+// ChatStreamTools is ChatStream with tools the model may call.
+// Text deltas are emitted as they arrive (a model often says "Let
+// me check." before calling a tool); tool calls come back whole in
+// the result, for the caller to run and answer. No tools means a
+// plain chat request.
+func (c *Client) ChatStreamTools(ctx context.Context, messages []Message, tools []Tool, emit func(delta string)) (StreamResult, error) {
+	req := chatRequest{Model: ModelSpark, Messages: toWireMessages(messages), Stream: true}
+	if len(tools) > 0 {
+		req.Tools, req.ToolChoice = tools, "auto"
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
-		return "", err
+		return StreamResult{}, err
 	}
 	var lastErr error
-	var partial string
+	var partial StreamResult
 	for attempt := 0; attempt < 2; attempt++ {
 		if attempt > 0 {
 			select {
@@ -189,11 +272,11 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, emit func(d
 			case <-time.After(600 * time.Millisecond):
 			}
 		}
-		text, retryable, err := c.streamOnce(ctx, body, emit)
+		res, retryable, err := c.streamOnce(ctx, body, emit)
 		if err == nil {
-			return text, nil
+			return res, nil
 		}
-		partial, lastErr = text, err
+		partial, lastErr = res, err
 		if !retryable {
 			return partial, err
 		}
@@ -201,10 +284,10 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, emit func(d
 	return partial, lastErr
 }
 
-func (c *Client) streamOnce(ctx context.Context, body []byte, emit func(delta string)) (text string, retryable bool, err error) {
+func (c *Client) streamOnce(ctx context.Context, body []byte, emit func(delta string)) (res StreamResult, retryable bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", false, err
+		return res, false, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -212,18 +295,34 @@ func (c *Client) streamOnce(ctx context.Context, body []byte, emit func(delta st
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return "", false, fmt.Errorf("meta: chat stream request: %w", err)
+		return res, false, fmt.Errorf("meta: chat stream request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		retry := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
-		return "", retry, fmt.Errorf("meta: chat stream HTTP %d: %s", resp.StatusCode, string(respBody))
+		return res, retry, fmt.Errorf("meta: chat stream HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var full strings.Builder
+	// Tool calls stream in pieces keyed by index: the first piece
+	// usually carries the id and name, later ones append arguments.
+	calls := map[int]*ToolCall{}
+	var order []int
 	received := false
+	finish := func() StreamResult {
+		out := StreamResult{Text: full.String(), FinishReason: res.FinishReason}
+		sort.Ints(order)
+		for _, i := range order {
+			call := *calls[i]
+			if call.Type == "" {
+				call.Type = "function"
+			}
+			out.ToolCalls = append(out.ToolCalls, call)
+		}
+		return out
+	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1<<20)
 	for scanner.Scan() {
@@ -237,9 +336,31 @@ func (c *Client) streamOnce(ctx context.Context, body []byte, emit func(delta st
 		}
 		var chunk chatChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return full.String(), false, fmt.Errorf("meta: chat stream chunk: %w", err)
+			return finish(), false, fmt.Errorf("meta: chat stream chunk: %w", err)
 		}
 		for _, choice := range chunk.Choices {
+			if choice.FinishReason != "" {
+				res.FinishReason = choice.FinishReason
+			}
+			for _, d := range choice.Delta.ToolCalls {
+				received = true
+				call, ok := calls[d.Index]
+				if !ok {
+					call = &ToolCall{}
+					calls[d.Index] = call
+					order = append(order, d.Index)
+				}
+				if d.ID != "" {
+					call.ID = d.ID
+				}
+				if d.Type != "" {
+					call.Type = d.Type
+				}
+				if d.Function.Name != "" {
+					call.Function.Name = d.Function.Name
+				}
+				call.Function.Arguments += d.Function.Arguments
+			}
 			if choice.Delta.Content == "" {
 				continue
 			}
@@ -249,12 +370,12 @@ func (c *Client) streamOnce(ctx context.Context, body []byte, emit func(delta st
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		// A failure before any content is worth one retry, like a
-		// failed non-streaming call; afterwards the caller speaks
-		// the partial reply instead.
-		return full.String(), !received, fmt.Errorf("meta: chat stream read: %w", err)
+		// A failure before anything arrived is worth one retry,
+		// like a failed non-streaming call; afterwards the caller
+		// speaks the partial reply instead.
+		return finish(), !received, fmt.Errorf("meta: chat stream read: %w", err)
 	}
-	return full.String(), false, nil
+	return finish(), false, nil
 }
 
 func (c *Client) chatOnce(ctx context.Context, body []byte) (reply string, retryable bool, err error) {

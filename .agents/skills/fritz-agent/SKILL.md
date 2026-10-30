@@ -14,6 +14,15 @@ description: >
 Lives in `api/internal/agent/` and `api/internal/memory/`. Load
 `meta-model-api` for request formats.
 
+Built so far: `agent.Agent.Run` streams Spark's reply (text is spoken
+as it arrives, across tool rounds), runs tool calls, and returns tool
+errors to the model as `{"error": ...}` instead of failing the turn.
+`meta.Client.ChatStreamTools` assembles streamed `tool_calls` deltas.
+`voicecheck` wires in `MailTools(reg.Mailboxes)` from
+`integrations.json`; no connected mailbox means no tools offered.
+Add a tool: a `Tool{Name, Description, Parameters, Run}` with strict
+argument decoding (`decodeArgs`) and a fake-backed test.
+
 ## Loop
 
 ```
@@ -49,8 +58,8 @@ turn text (from voice or web)
 
 | Tool | Package | Notes |
 |---|---|---|
-| `gmail_search(query, max)` | integrations | Summaries only: from, subject, date, snippet |
-| `gmail_read(id)` | integrations | Full body, truncated to ~4k chars |
+| `email_search(query, max)` | agent/mail.go | Built. All connected mailboxes merged newest-first; summaries only (from, subject, date, unread, snippet, account + id) |
+| `email_read(account, id)` | agent/mail.go | Built. Full body, truncated to 4k chars |
 | `gmail_draft_reply(id, body)` | integrations | Creates a draft; returns `draft_id` |
 | `gmail_send_draft(draft_id)` | integrations | **Needs confirmation** |
 | `calendar_list(from, to)` | integrations | |
