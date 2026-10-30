@@ -75,7 +75,19 @@ Pi 4). Say so in the README and demo — it isn't a Meta model.
   aplay -D pipewire -r 22050 -f S16_LE -c 1 -t raw -q` (the sample rate must
   match the voice's `.onnx.json`). Output goes to the Echo Dot.
 - Speak sentence by sentence as the agent's reply arrives, so the first words
-  start sooner.
+  start sooner. The first chunk may end at a comma (`Splitter{FirstClause:
+  true}`), and the prompt asks for a short first sentence.
+- `voice.Engine` keeps ONE piper (`--output_dir`, one WAV per line) and ONE
+  aplay stream open for the whole session, writing silence between replies
+  so the Bluetooth sink never sleeps. Don't go back to a piper per reply:
+  that reloads the voice model and wakes the Echo every answer (~1 s).
+  `FRITZ_PIPER_PERSIST=0` falls back to per-reply Piper for comparison.
+- If Spark's first sentence takes longer than `FRITZ_ACK_AFTER_MS` (default
+  600, `0` = off), a pre-rendered "Mm-hm." / "One sec." plays first.
+- Local endpointing waits `FRITZ_STALL_MS` (default 900) of unchanged
+  partials. Lower is faster but can cut off a slow talker.
+- `voicecheck` prints a `[timing]` line per reply (end of speech → request,
+  Spark → first sentence, Piper → first audio). Measure before tuning.
 - Face: `speaking on` before the first chunk, `speaking off` after the last.
 - While speaking, and for 700 ms after (Bluetooth delay), send silence
   instead of mic audio so Fritz doesn't hear itself through the C922 — see

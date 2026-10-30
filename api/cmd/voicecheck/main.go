@@ -14,11 +14,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/face"
@@ -96,6 +99,27 @@ func main() {
 	chat := &meta.Client{APIKey: apiKey}
 	piperVoice := os.Getenv("FRITZ_PIPER_VOICE")
 
+	// Speech: one always-on Piper + speaker stream (voice.Engine), so
+	// a reply skips the voice-model load and the Bluetooth wake-up.
+	// If it can't start, each reply falls back to its own pipeline
+	// (FRITZ_PIPER_PERSIST=0 forces that, for comparison).
+	var engine *voice.Engine
+	var acks [][]byte
+	if piperVoice != "" && os.Getenv("FRITZ_PIPER_PERSIST") != "0" {
+		if e, err := voice.NewEngine(ctx, piperVoice); err != nil {
+			fmt.Println("speech: engine unavailable, using per-reply Piper:", err)
+		} else {
+			engine = e
+			acks = renderAcks(ctx, engine)
+			fmt.Printf("speech: Piper loaded once, speaker stream open, %d acknowledgements ready\n", len(acks))
+		}
+	}
+	ackAfter := envMillis("FRITZ_ACK_AFTER_MS", 600)
+	stallFor := envMillis("FRITZ_STALL_MS", 900)
+	// lastHeard is when the latest transcript text arrived — about
+	// when the user stopped talking — for the per-turn timing line.
+	var lastHeard atomic.Int64
+
 	// Vision: the eyes follow your face (SAM 3.1 at ~1 Hz).
 	// Optional — voice keeps working without a camera or face.
 	// follow is also how respond() tells the model whether Fritz
@@ -144,7 +168,7 @@ func main() {
 		}
 	}
 	var replyMu sync.Mutex
-	respond := func(request string) {
+	respond := func(request string, heardAt time.Time) {
 		replyMu.Lock()
 		defer replyMu.Unlock()
 		defer tracker.MarkReplied(time.Now())
@@ -153,9 +177,14 @@ func main() {
 			faceClient.Emotion("thinking")
 		}
 		now := time.Now()
+		if engine != nil && engine.Err() != nil {
+			fmt.Println("speech: engine stopped, using per-reply Piper from now on:", engine.Err())
+			engine = nil
+		}
 		system := fmt.Sprintf(
 			"You are Fritz, a warm desk companion. Your replies are spoken aloud: "+
 				"answer in 1-3 short sentences, no markdown, no lists, no URLs. "+
+				"Keep your first sentence short, a few words, so you can start speaking right away. "+
 				"The current local time is %s.", now.Format("Mon 2 Jan 2006, 3:04 PM"))
 		// What Fritz remembers about the user goes in every turn,
 		// refreshed each time so newly learned facts apply at once.
@@ -194,15 +223,44 @@ func main() {
 
 		fmt.Println("(thinking...)")
 		chatStart := time.Now()
-		// Start the speaker before the first token arrives so
-		// Piper's model load overlaps the reply's first sentence.
-		// Without FRITZ_PIPER_VOICE the reply streams to the
-		// console only.
-		speaker, speakerErr := voice.StartSpeaker(ctx, piperVoice)
-		if speakerErr != nil {
-			fmt.Println("speaker unavailable (reply will be printed, not spoken):", speakerErr)
-			speaker = nil
+		// firstAudio is set from the engine's playback goroutine.
+		var firstAudio atomic.Int64
+		var speaker mouth
+		if engine != nil {
+			speaker = engineMouth{ctx: ctx, engine: engine, onAudio: func(t time.Time) {
+				firstAudio.CompareAndSwap(0, t.UnixNano())
+			}}
+		} else {
+			// Start the per-reply pipeline before the first token
+			// arrives so Piper's model load overlaps the reply's
+			// first sentence. Without FRITZ_PIPER_VOICE the reply
+			// streams to the console only.
+			s, speakerErr := voice.StartSpeaker(ctx, piperVoice)
+			if speakerErr != nil {
+				fmt.Println("speaker unavailable (reply will be printed, not spoken):", speakerErr)
+			} else {
+				speaker = s
+			}
 		}
+
+		// If Spark's first sentence is slow, say a short pre-rendered
+		// "Mm-hm." so the user hears Fritz respond right away. The
+		// lock makes "ack" and "first sentence" mutually ordered: the
+		// ack is only queued if no sentence has been queued yet.
+		var spokeMu sync.Mutex
+		spoke := false
+		if engine != nil && len(acks) > 0 && ackAfter > 0 {
+			ack := time.AfterFunc(ackAfter, func() {
+				spokeMu.Lock()
+				defer spokeMu.Unlock()
+				if !spoke {
+					engine.PlayPCM(acks[rand.IntN(len(acks))])
+					fmt.Println("[ack]")
+				}
+			})
+			defer ack.Stop()
+		}
+
 		var firstSpokenAt time.Time
 		say := func(sentence string) {
 			if speaker == nil {
@@ -215,7 +273,11 @@ func main() {
 					faceClient.Emotion("happy")
 				}
 			}
-			if err := speaker.Say(sentence); err != nil {
+			spokeMu.Lock()
+			spoke = true
+			err := speaker.Say(sentence)
+			spokeMu.Unlock()
+			if err != nil {
 				fmt.Println("speaker error (rest of reply printed, not spoken):", err)
 				_ = speaker.Close()
 				speaker = nil
@@ -234,6 +296,7 @@ func main() {
 						fmt.Printf("[spoken in %s]\n", time.Since(firstSpokenAt).Round(time.Millisecond))
 					}
 				}
+				printTiming(heardAt, now, firstSpokenAt, time.Unix(0, firstAudio.Load()))
 				// Bluetooth tail: keep muting briefly after
 				// playback ends.
 				select {
@@ -247,7 +310,7 @@ func main() {
 			}()
 		}
 
-		var splitter voice.Splitter
+		splitter := voice.Splitter{FirstClause: true}
 		var reply strings.Builder
 		// The returned full text duplicates what the callback
 		// accumulated; the stream error is what matters here.
@@ -323,7 +386,11 @@ func main() {
 				faceClient.Blink()
 			}
 			fmt.Printf(">> REQUEST: %s\n", request)
-			respond(request) // speaks the reply; opens the follow-up window
+			var heardAt time.Time
+			if ns := lastHeard.Load(); ns != 0 {
+				heardAt = time.Unix(0, ns)
+			}
+			respond(request, heardAt) // speaks the reply; opens the follow-up window
 		} else if voice.WakeMatch(text) {
 			fmt.Println(">> (wake phrase heard — next turn is the request)")
 			if faceClient != nil {
@@ -342,12 +409,11 @@ func main() {
 	// speechComplete — partials just stop changing. Watch for that
 	// stall and finish the turn locally, so a quiet server never
 	// leaves a request unheard. A late server completion carrying
-	// the same text is dropped by handleTurn's dedupe.
+	// the same text is dropped by handleTurn's dedupe. stallFor
+	// (FRITZ_STALL_MS) trades speed against cutting off a slow
+	// talker mid-pause.
 	go func() {
-		const (
-			poll     = 200 * time.Millisecond
-			stallFor = 1500 * time.Millisecond
-		)
+		const poll = 100 * time.Millisecond
 		ticker := time.NewTicker(poll)
 		defer ticker.Stop()
 		var lastText string
@@ -381,8 +447,15 @@ func main() {
 		}
 	}()
 
+	lastTranscript := ""
 	err = client.Run(ctx, audio, func(event voice.Event) {
 		collector.Observe(event)
+		// Only new words count as "still talking": a repeated
+		// partial would make the endpointing wait look shorter.
+		if event.Type == "transcript" && event.Transcript != lastTranscript {
+			lastTranscript = event.Transcript
+			lastHeard.Store(time.Now().UnixNano())
+		}
 		if debug && event.Type != "audioProgress" {
 			// audioProgress fires constantly while audio streams; it
 			// only proves the server is receiving sound. Print the raw
@@ -447,4 +520,78 @@ func looksVisual(request string) bool {
 		}
 	}
 	return false
+}
+
+// mouth is one reply's speech output: the always-on engine, or a
+// per-reply Piper pipeline (voice.Speaker) when the engine is off.
+type mouth interface {
+	Say(sentence string) error
+	Close() error // waits until the reply has finished playing
+}
+
+type engineMouth struct {
+	ctx     context.Context
+	engine  *voice.Engine
+	onAudio func(time.Time)
+}
+
+func (m engineMouth) Say(sentence string) error { return m.engine.Say(sentence, m.onAudio) }
+func (m engineMouth) Close() error              { return m.engine.Wait(m.ctx) }
+
+// ackPhrases are pre-rendered at startup and played when Spark's
+// first sentence is slow to arrive. Short and neutral, so they fit
+// any question.
+var ackPhrases = []string{"Mm-hm.", "Okay.", "Let me see.", "One sec."}
+
+func renderAcks(ctx context.Context, engine *voice.Engine) [][]byte {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var out [][]byte
+	for _, phrase := range ackPhrases {
+		pcm, err := engine.Render(ctx, phrase)
+		if err != nil {
+			fmt.Println("speech: could not pre-render acknowledgement:", err)
+			continue
+		}
+		out = append(out, pcm)
+	}
+	return out
+}
+
+// envMillis reads a duration in milliseconds from the environment.
+// "0" is allowed (it disables the feature that uses it).
+func envMillis(name string, def int) time.Duration {
+	if v := os.Getenv(name); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return time.Duration(n) * time.Millisecond
+		}
+		fmt.Printf("note: %s=%q is not a number of milliseconds; using %d\n", name, v, def)
+	}
+	return time.Duration(def) * time.Millisecond
+}
+
+// printTiming prints where one reply's latency went, so speed
+// changes can be measured on the Pi instead of guessed. Unknown
+// steps (no transcript time, per-reply Piper) are left out.
+// Bluetooth adds roughly another 0.2-0.4 s after "first audio".
+func printTiming(heardAt, requestAt, firstSentence, firstAudio time.Time) {
+	r := func(d time.Duration) string { return d.Round(10 * time.Millisecond).String() }
+	parts := []string{}
+	start := requestAt
+	if !heardAt.IsZero() && heardAt.Before(requestAt) {
+		parts = append(parts, "end of speech→request "+r(requestAt.Sub(heardAt)))
+		start = heardAt
+	}
+	if !firstSentence.IsZero() {
+		parts = append(parts, "Spark→first sentence "+r(firstSentence.Sub(requestAt)))
+		if firstAudio.UnixNano() > 0 && firstAudio.After(firstSentence) {
+			parts = append(parts, "Piper→first audio "+r(firstAudio.Sub(firstSentence)))
+		}
+	}
+	if firstAudio.UnixNano() > 0 {
+		parts = append(parts, "TOTAL "+r(firstAudio.Sub(start)))
+	}
+	if len(parts) > 0 {
+		fmt.Println("[timing] " + strings.Join(parts, " | "))
+	}
 }

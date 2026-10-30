@@ -81,7 +81,13 @@ func (s *Speaker) Close() error {
 // returns the newly completed sentences. Flush returns whatever is
 // left when the stream ends.
 type Splitter struct {
+	// FirstClause lets the first chunk end at a comma, semicolon, or
+	// colon too ("Sure," / "Good question,"), so Piper can start
+	// speaking before the whole first sentence has streamed in.
+	FirstClause bool
+
 	pending string
+	emitted bool
 }
 
 // Feed appends a text chunk and returns the sentences it completed.
@@ -91,7 +97,12 @@ func (s *Splitter) Feed(chunk string) []string {
 	for {
 		end := -1
 		for i := 0; i+1 < len(s.pending); i++ {
-			if c := s.pending[i]; (c == '.' || c == '!' || c == '?') && isSpaceByte(s.pending[i+1]) {
+			c := s.pending[i]
+			if !isSpaceByte(s.pending[i+1]) {
+				continue
+			}
+			if c == '.' || c == '!' || c == '?' ||
+				(s.FirstClause && !s.emitted && (c == ',' || c == ';' || c == ':')) {
 				end = i + 1
 				break
 			}
@@ -101,6 +112,7 @@ func (s *Splitter) Feed(chunk string) []string {
 		}
 		if sentence := strings.TrimSpace(s.pending[:end]); sentence != "" {
 			out = append(out, sentence)
+			s.emitted = true
 		}
 		s.pending = s.pending[end:]
 	}
@@ -110,6 +122,9 @@ func (s *Splitter) Feed(chunk string) []string {
 func (s *Splitter) Flush() string {
 	text := strings.TrimSpace(s.pending)
 	s.pending = ""
+	if text != "" {
+		s.emitted = true
+	}
 	return text
 }
 
