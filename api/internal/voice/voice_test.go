@@ -48,6 +48,25 @@ func TestParseEvent(t *testing.T) {
 	}
 }
 
+func TestTurnCollector(t *testing.T) {
+	c := &TurnCollector{}
+	// Text only in cumulative transcript events; speechComplete empty.
+	c.Observe(Event{Type: "transcript", TurnID: "t1", Transcript: "Hi"})
+	c.Observe(Event{Type: "transcript", TurnID: "t1", Transcript: "Hi Fritz"})
+	if got := c.Complete(Event{Type: "speechComplete", TurnID: "t1"}); got != "Hi Fritz" {
+		t.Errorf("Complete from transcripts = %q, want latest cumulative", got)
+	}
+	// The event's own transcript wins when present.
+	c.Observe(Event{Type: "transcript", TurnID: "t2", Transcript: "partial text"})
+	if got := c.Complete(Event{Type: "speechComplete", TurnID: "t2", Transcript: "final text"}); got != "final text" {
+		t.Errorf("Complete with own text = %q", got)
+	}
+	// Turns are forgotten after completion.
+	if got := c.Complete(Event{Type: "speechComplete", TurnID: "t2"}); got != "" {
+		t.Errorf("Complete twice = %q, want empty", got)
+	}
+}
+
 func TestTracker(t *testing.T) {
 	now := time.Unix(1000, 0)
 	tr := &Tracker{}

@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/face"
@@ -58,8 +57,15 @@ func main() {
 
 	fmt.Printf("voicecheck: streaming mic (%s) — say \"Hi Fritz\", Ctrl-C to stop\n", mic)
 	tracker := &voice.Tracker{}
+	collector := &voice.TurnCollector{}
+	debug := os.Getenv("FRITZ_VOICE_DEBUG") == "1"
 	client := &voice.Client{APIKey: apiKey}
 	err = client.Run(ctx, audio, func(event voice.Event) {
+		collector.Observe(event)
+		if debug {
+			fmt.Printf("[event %s turn=%s final=%v transcript=%q session=%q]\n",
+				event.Type, event.TurnID, event.Final, event.Transcript, event.SessionID)
+		}
 		switch event.Type {
 		case "speechStart":
 			if tracker.Awake(time.Now()) && faceClient != nil {
@@ -73,8 +79,9 @@ func main() {
 			}
 			fmt.Printf("[%s] %s\n", kind, event.Transcript)
 		case "speechComplete":
-			text := strings.TrimSpace(event.Transcript)
+			text := collector.Complete(event)
 			if text == "" {
+				fmt.Println("[turn complete with no text — run with FRITZ_VOICE_DEBUG=1 and report the event lines]")
 				return
 			}
 			fmt.Printf("[turn complete] %q\n", text)

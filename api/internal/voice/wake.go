@@ -6,9 +6,12 @@ package voice
 import "strings"
 
 // wakeAliases are the accepted wake spellings. Collect real
-// mis-hearings from logs and add them here.
+// mis-hearings from logs and add them here. "friends" was heard for
+// "Fritz" on the C922 in a real Pi test (2026-10-30); it can only
+// trigger as a whole word, e.g. "Hi friends".
 var wakeAliases = map[string]bool{
 	"fritz": true, "fritts": true, "frits": true, "fritzz": true,
+	"friends": true,
 }
 
 // cleanWords lowercases a transcript and splits it into words,
