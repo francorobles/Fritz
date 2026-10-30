@@ -14,6 +14,10 @@ type Event struct {
 	Transcript string `json:"transcript"`
 	Final      bool   `json:"final"`
 	Message    string `json:"message"` // on error events, when present
+
+	// Raw is the original JSON frame, kept for debugging: the API may
+	// carry fields under names this struct does not know yet.
+	Raw string `json:"-"`
 }
 
 // IsSessionAck reports whether this event is the handshake
@@ -26,5 +30,6 @@ func ParseEvent(data []byte) (Event, error) {
 	if err := json.Unmarshal(data, &event); err != nil {
 		return Event{}, err
 	}
+	event.Raw = string(data)
 	return event, nil
 }

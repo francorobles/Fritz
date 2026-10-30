@@ -65,11 +65,46 @@ func main() {
 	collector := &voice.TurnCollector{}
 	debug := os.Getenv("FRITZ_VOICE_DEBUG") == "1"
 	client := &voice.Client{APIKey: apiKey}
+	// handleTurn runs one completed turn through the wake tracker.
+	// The same turn can complete twice in the event stream (a final
+	// transcript, then speechComplete), so identical text within a
+	// few seconds is only handled once.
+	lastHandled := ""
+	lastHandledAt := time.Time{}
+	handleTurn := func(text string) {
+		if text == "" {
+			return
+		}
+		if text == lastHandled && time.Since(lastHandledAt) < 3*time.Second {
+			return
+		}
+		lastHandled, lastHandledAt = text, time.Now()
+		fmt.Printf("[turn complete] %q\n", text)
+		if request, ok := tracker.Accept(text, time.Now()); ok {
+			if faceClient != nil {
+				faceClient.Blink()
+				faceClient.Emotion("happy")
+			}
+			fmt.Printf(">> REQUEST: %s\n", request)
+			// A real agent would reply now; the follow-up window
+			// opens as if it had.
+			tracker.MarkReplied(time.Now())
+		} else if voice.WakeMatch(text) {
+			fmt.Println(">> (wake phrase heard — next turn is the request)")
+			if faceClient != nil {
+				faceClient.Blink()
+				faceClient.Emotion("focused")
+			}
+		}
+	}
+
 	err = client.Run(ctx, audio, func(event voice.Event) {
 		collector.Observe(event)
-		if debug {
-			fmt.Printf("[event %s turn=%s final=%v transcript=%q session=%q]\n",
-				event.Type, event.TurnID, event.Final, event.Transcript, event.SessionID)
+		if debug && event.Type != "audioProgress" {
+			// audioProgress fires constantly while audio streams; it
+			// only proves the server is receiving sound. Print the raw
+			// frame: the API may use field names we don't parse yet.
+			fmt.Printf("[event %s]\n", event.Raw)
 		}
 		switch event.Type {
 		case "speechStart":
@@ -83,31 +118,20 @@ func main() {
 				kind = "final"
 			}
 			fmt.Printf("[%s] %s\n", kind, event.Transcript)
+			if event.Final {
+				// Some sessions mark completion only here, with no
+				// (or a much later) speechComplete.
+				handleTurn(collector.Complete(event))
+			}
 		case "speechComplete":
 			text := collector.Complete(event)
-			if text == "" {
+			if text == "" && lastHandled == "" {
 				fmt.Println("[turn complete with no text — run with FRITZ_VOICE_DEBUG=1 and report the event lines]")
 				return
 			}
-			fmt.Printf("[turn complete] %q\n", text)
-			if request, ok := tracker.Accept(text, time.Now()); ok {
-				if faceClient != nil {
-					faceClient.Blink()
-					faceClient.Emotion("happy")
-				}
-				fmt.Printf(">> REQUEST: %s\n", request)
-				// A real agent would reply now; the follow-up window
-				// opens as if it had.
-				tracker.MarkReplied(time.Now())
-			} else if voice.WakeMatch(text) {
-				fmt.Println(">> (wake phrase heard — next turn is the request)")
-				if faceClient != nil {
-					faceClient.Blink()
-					faceClient.Emotion("focused")
-				}
-			}
+			handleTurn(text)
 		case "speechEnd":
-			// Turn boundary; speechComplete carries the final text.
+			// Turn boundary; completion comes via final/speechComplete.
 		default:
 			// Ignore unknown event types, per the API contract.
 		}
