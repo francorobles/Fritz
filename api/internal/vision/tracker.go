@@ -3,6 +3,7 @@ package vision
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -90,8 +91,9 @@ func (t *Tracker) Run(ctx context.Context) {
 	var (
 		hits     int       // consecutive sightings
 		lastHit  time.Time // last successful sighting
-		sx, sy   float64   // smoothed gaze
-		smoothed bool
+		sx, sy   float64   // smoothed gaze (guarded by gmu: the
+		smoothed bool      // refresher below reads it)
+		gmu      sync.Mutex
 	)
 	emit := func(present bool) {
 		t.present.Store(present)
@@ -128,6 +130,7 @@ func (t *Tracker) Run(ctx context.Context) {
 			hits++
 			lastHit = now
 			gx, gy := GazeFor(box, t.cfg)
+			gmu.Lock()
 			if !smoothed {
 				sx, sy, smoothed = gx, gy, true
 			} else {
@@ -136,9 +139,11 @@ func (t *Tracker) Run(ctx context.Context) {
 				sx += 0.5 * (gx - sx)
 				sy += 0.5 * (gy - sy)
 			}
-			t.face.Gaze(sx, sy)
+			curX, curY := sx, sy
+			gmu.Unlock()
+			t.face.Gaze(curX, curY)
 			if t.OnGaze != nil {
-				t.OnGaze(sx, sy)
+				t.OnGaze(curX, curY)
 			}
 			if !t.present.Load() && hits >= t.cfg.PresentHits {
 				t.logf("vision: user present")
@@ -149,11 +154,36 @@ func (t *Tracker) Run(ctx context.Context) {
 		hits = 0
 		if t.present.Load() && !lastHit.IsZero() && now.Sub(lastHit) > t.cfg.AbsentAfter {
 			t.logf("vision: user absent")
-			t.face.GazeOff()
+			gmu.Lock()
 			smoothed = false
+			gmu.Unlock()
 			emit(false)
+			t.face.GazeOff()
 		}
 	}
+
+	// The face drops the gaze override 1.5 s after the last
+	// command, but a SAM round-trip can take longer than that —
+	// without refreshes the eyes keep falling back to standby
+	// wander between sightings and never look like they're
+	// following you. Re-send the last known point meanwhile.
+	go func() {
+		refresh := time.NewTicker(700 * time.Millisecond)
+		defer refresh.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-refresh.C:
+				gmu.Lock()
+				x, y, ok := sx, sy, smoothed
+				gmu.Unlock()
+				if ok && t.present.Load() {
+					t.face.Gaze(x, y)
+				}
+			}
+		}
+	}()
 
 	// Track immediately, then on the ticker.
 	tick()

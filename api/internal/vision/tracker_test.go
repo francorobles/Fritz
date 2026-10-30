@@ -146,6 +146,38 @@ func TestTrackerFollowsThenReleases(t *testing.T) {
 	}
 }
 
+// TestTrackerRefreshesGazeBetweenSlowSightings proves gaze
+// commands keep flowing faster than the segmentation rate: the
+// face drops the override 1.5 s after the last command, so without
+// refreshes the eyes fall back to wander between slow sightings.
+func TestTrackerRefreshesGazeBetweenSlowSightings(t *testing.T) {
+	frames := &fakeFramer{frame: makeJPEG(t, 64, 48), have: true}
+	seg := &fakeSegmenter{text: personLine}
+	face := &fakeGazer{}
+	tr := NewTracker(seg, face, frames, Config{
+		Prompt:      "person",
+		HZ:          1, // slow segmentation on purpose
+		PresentHits: 1,
+		AbsentAfter: 5 * time.Second,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go tr.Run(ctx)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		_, gazes, _ := face.last()
+		calls := seg.calls()
+		if gazes >= 3 && calls <= 2 {
+			return // at least one gaze came from the refresher
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("gazes=%d segment calls=%d — no refresh between sightings", gazes, calls)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestTrackerWithoutFramesStaysQuiet(t *testing.T) {
 	frames := &fakeFramer{} // camera not up: no frames
 	seg := &fakeSegmenter{text: personLine}

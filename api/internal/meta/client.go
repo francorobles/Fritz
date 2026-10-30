@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,6 +30,47 @@ const (
 type Message struct {
 	Role    string `json:"role"` // system | user | assistant | tool
 	Content string `json:"content"`
+
+	// Image, when set on a user message, attaches a JPEG photo:
+	// on the wire the content becomes text + image_url parts
+	// (Muse Spark vision input), so the model can answer
+	// questions about what the camera sees. Never set on history
+	// or assistant messages.
+	Image []byte `json:"-"`
+}
+
+// wireMessage is the on-the-wire chat message. Content is the
+// plain string normally, or text+image parts with a photo.
+type wireMessage struct {
+	Role    string `json:"role"`
+	Content any    `json:"content"`
+}
+
+type wireImageURL struct {
+	URL string `json:"url"`
+}
+
+type wireContentPart struct {
+	Type     string        `json:"type"` // text | image_url
+	Text     string        `json:"text,omitempty"`
+	ImageURL *wireImageURL `json:"image_url,omitempty"`
+}
+
+func toWireMessages(messages []Message) []wireMessage {
+	out := make([]wireMessage, len(messages))
+	for i, m := range messages {
+		if len(m.Image) == 0 {
+			out[i] = wireMessage{Role: m.Role, Content: m.Content}
+			continue
+		}
+		out[i] = wireMessage{Role: m.Role, Content: []wireContentPart{
+			{Type: "text", Text: m.Content},
+			{Type: "image_url", ImageURL: &wireImageURL{
+				URL: "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(m.Image),
+			}},
+		}}
+	}
+	return out
 }
 
 // Client calls the Meta Model API with one API key.
@@ -45,10 +87,10 @@ func (c *Client) httpClient() *http.Client {
 }
 
 type chatRequest struct {
-	Model          string    `json:"model"`
-	Messages       []Message `json:"messages"`
-	Stream         bool      `json:"stream,omitempty"`
-	ResponseFormat any       `json:"response_format,omitempty"`
+	Model          string        `json:"model"`
+	Messages       []wireMessage `json:"messages"`
+	Stream         bool          `json:"stream,omitempty"`
+	ResponseFormat any           `json:"response_format,omitempty"`
 }
 
 type chatResponse struct {
@@ -89,7 +131,7 @@ func (c *Client) ChatJSON(ctx context.Context, model string, messages []Message,
 }
 
 func (c *Client) chatWithFormat(ctx context.Context, model string, messages []Message, format any) (string, error) {
-	body, err := json.Marshal(chatRequest{Model: model, Messages: messages, ResponseFormat: format})
+	body, err := json.Marshal(chatRequest{Model: model, Messages: toWireMessages(messages), ResponseFormat: format})
 	if err != nil {
 		return "", err
 	}
@@ -133,7 +175,7 @@ type chatChunk struct {
 // received yet. A stream that dies mid-reply returns the partial
 // text with the error, so callers can still use what arrived.
 func (c *Client) ChatStream(ctx context.Context, messages []Message, emit func(delta string)) (string, error) {
-	body, err := json.Marshal(chatRequest{Model: ModelSpark, Messages: messages, Stream: true})
+	body, err := json.Marshal(chatRequest{Model: ModelSpark, Messages: toWireMessages(messages), Stream: true})
 	if err != nil {
 		return "", err
 	}

@@ -32,6 +32,31 @@ func (s *segmentStub) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+func TestChatImagePartsOnTheWire(t *testing.T) {
+	stub := &segmentStub{body: "data: {\"choices\":[{\"delta\":{\"content\":\"Blue.\"}}]}\n\ndata: [DONE]\n\n"}
+	client := &Client{APIKey: "k", HTTP: &http.Client{Transport: stub}}
+	reply, err := client.ChatStream(context.Background(), []Message{
+		{Role: "system", Content: "be brief"},
+		{Role: "user", Content: "what color is my shirt", Image: []byte("\xff\xd8jpeg")},
+	}, func(delta string) {})
+	if err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	if reply != "Blue." {
+		t.Errorf("reply = %q", reply)
+	}
+	body := string(stub.req)
+	// The plain message stays a string; the photo message becomes parts.
+	if !strings.Contains(body, `"content":"be brief"`) {
+		t.Errorf("system message not a plain string: %s", body)
+	}
+	for _, needle := range []string{`"type":"text"`, `"text":"what color is my shirt"`, `"type":"image_url"`, "data:image/jpeg;base64,"} {
+		if !strings.Contains(body, needle) {
+			t.Errorf("request missing %s: %s", needle, body)
+		}
+	}
+}
+
 func TestSegmentStreamsDeltas(t *testing.T) {
 	stub := &segmentStub{body: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"<0f>0<|box;x1=1;y1=2;x2=3;y2=4;w=10;h=10|>\"}\n\n" +
 		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"<|mask;x=0;y=0;data=2,2,~xx|>\"}\n\n" +

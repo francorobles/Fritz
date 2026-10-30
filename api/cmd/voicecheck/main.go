@@ -101,12 +101,13 @@ func main() {
 	// follow is also how respond() tells the model whether Fritz
 	// can currently see the user.
 	var follow *vision.Tracker
+	var frames *vision.FrameSource
 	if vision.CameraOff() {
 		fmt.Println("vision: camera off (FRITZ_CAMERA=off) — eyes will not follow")
 	} else if faceClient == nil {
 		fmt.Println("vision: face unavailable — eyes will not follow")
 	} else {
-		frames := vision.NewFrameSource(os.Getenv("FRITZ_CAMERA_DEVICE"))
+		frames = vision.NewFrameSource(os.Getenv("FRITZ_CAMERA_DEVICE"))
 		frames.Logf = func(msg string) { fmt.Println(msg) }
 		go frames.Run(ctx)
 		follow = vision.NewTracker(chat, faceClient, frames, vision.ConfigFromEnv())
@@ -171,12 +172,25 @@ func main() {
 			} else {
 				system += "\nYou have a camera on your desk, but you cannot see the user right now (they may have stepped away). If they ask whether you can see them, say not at the moment."
 			}
+			system += "\nIf the user's message has a photo attached, it is the live view from your camera right now — answer questions about it from what the photo shows."
 		}
 		messages := []meta.Message{
 			{Role: "system", Content: system},
 		}
 		messages = append(messages, history...)
-		messages = append(messages, meta.Message{Role: "user", Content: request})
+		userMsg := meta.Message{Role: "user", Content: request}
+		// A visual question ("what shirt am I wearing?") gets the
+		// live camera frame attached, so Spark answers from what
+		// Fritz actually sees. Only while the tracker currently
+		// sees the user — a stale frame from a stalled camera is
+		// never passed off as the present view.
+		if frames != nil && follow != nil && follow.Present() && looksVisual(request) {
+			if frame, ok := frames.Latest(); ok {
+				userMsg.Image = frame
+				fmt.Println("[looking through the camera]")
+			}
+		}
+		messages = append(messages, userMsg)
 
 		fmt.Println("(thinking...)")
 		chatStart := time.Now()
@@ -410,4 +424,27 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("voicecheck: stopped")
+}
+
+// lookTriggers mark a request as being about what Fritz sees.
+// Matching is substring on the lowercased request — deliberately
+// generous: attaching an unneeded photo costs a little latency,
+// while missing a visual question makes Fritz blind to it.
+var lookTriggers = []string{
+	"see me", "can you see", "do you see", "see what",
+	"wearing", "what color", "what colour",
+	"look at", "how do i look", "do i look",
+	"holding", "read this", "read that", "in my hand",
+}
+
+// looksVisual reports whether a request asks about the visible
+// scene (and so should carry the live camera frame).
+func looksVisual(request string) bool {
+	lower := strings.ToLower(request)
+	for _, trigger := range lookTriggers {
+		if strings.Contains(lower, trigger) {
+			return true
+		}
+	}
+	return false
 }
