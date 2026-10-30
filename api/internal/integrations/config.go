@@ -11,7 +11,9 @@
 package integrations
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -163,10 +165,36 @@ func Load() (Config, string, error) {
 		return Config{}, path, fmt.Errorf("integrations: read %s: %w", path, err)
 	}
 	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, path, fmt.Errorf("integrations: parse %s: %w", path, err)
+	dec := json.NewDecoder(bytes.NewReader(data))
+	// Unknown keys are errors: a typo like "calender" would
+	// otherwise parse fine and silently leave the provider
+	// disabled — Fritz then claims he can't do something the
+	// user just enabled, with no hint anywhere.
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		var syn *json.SyntaxError
+		if errors.As(err, &syn) {
+			line, col := lineCol(data, syn.Offset)
+			return Config{}, path, fmt.Errorf("integrations: parse %s: line %d, column %d: %w (fix the JSON; until then NO providers load)", path, line, col, err)
+		}
+		return Config{}, path, fmt.Errorf("integrations: parse %s: %w (fix the JSON; until then NO providers load)", path, err)
 	}
 	return cfg, path, nil
+}
+
+// lineCol converts a byte offset into 1-based line/column for
+// error messages.
+func lineCol(data []byte, offset int64) (line, col int) {
+	line, col = 1, 1
+	for i := int64(0); i < offset-1 && i < int64(len(data)); i++ {
+		if data[i] == '\n' {
+			line++
+			col = 1
+		} else {
+			col++
+		}
+	}
+	return line, col
 }
 
 // Secret resolves an env-referenced secret. Empty name or unset

@@ -23,6 +23,22 @@ func TestLoadConfig(t *testing.T) {
 		t.Error("malformed JSON must error")
 	}
 
+	// The error must say WHERE, so a Pi edit can be fixed in one pass.
+	badSyntax := filepath.Join(t.TempDir(), "integrations.json")
+	_ = os.WriteFile(badSyntax, []byte("{\n  \"gmail\": {\"enabled\": true},\n  \"calendar\": {\"enabled\": true,}\n}"), 0o600)
+	t.Setenv("FRITZ_INTEGRATIONS_FILE", badSyntax)
+	if _, _, err := Load(); err == nil || !strings.Contains(err.Error(), "line 3") {
+		t.Errorf("trailing-comma error = %v, want it to name line 3", err)
+	}
+
+	// A misspelled provider key errors instead of silently disabling it.
+	typo := filepath.Join(t.TempDir(), "integrations.json")
+	_ = os.WriteFile(typo, []byte(`{"calender": {"enabled": true}}`), 0o600)
+	t.Setenv("FRITZ_INTEGRATIONS_FILE", typo)
+	if _, _, err := Load(); err == nil || !strings.Contains(err.Error(), "calender") {
+		t.Errorf("typo error = %v, want it to name the unknown field", err)
+	}
+
 	// A real file parses, defaults resolve.
 	good := filepath.Join(t.TempDir(), "integrations.json")
 	_ = os.WriteFile(good, []byte(`{

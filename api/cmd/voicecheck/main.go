@@ -152,7 +152,7 @@ func main() {
 	var tools []agent.Tool
 	var confirmer *agent.Confirmer
 	if icfg, icfgPath, ierr := integrations.Load(); ierr != nil {
-		fmt.Println("tools: integrations config:", ierr)
+		fmt.Println("tools: NONE — integrations config failed to load, so no email/calendar tools:", ierr)
 	} else {
 		if icfgPath == "" {
 			fmt.Printf("tools: no integrations.json at %s — every provider is disabled\n", integrations.ConfigFile())
