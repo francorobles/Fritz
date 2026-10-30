@@ -98,6 +98,9 @@ func main() {
 
 	// Vision: the eyes follow your face (SAM 3.1 at ~1 Hz).
 	// Optional — voice keeps working without a camera or face.
+	// follow is also how respond() tells the model whether Fritz
+	// can currently see the user.
+	var follow *vision.Tracker
 	if vision.CameraOff() {
 		fmt.Println("vision: camera off (FRITZ_CAMERA=off) — eyes will not follow")
 	} else if faceClient == nil {
@@ -106,7 +109,7 @@ func main() {
 		frames := vision.NewFrameSource(os.Getenv("FRITZ_CAMERA_DEVICE"))
 		frames.Logf = func(msg string) { fmt.Println(msg) }
 		go frames.Run(ctx)
-		follow := vision.NewTracker(chat, faceClient, frames, vision.ConfigFromEnv())
+		follow = vision.NewTracker(chat, faceClient, frames, vision.ConfigFromEnv())
 		follow.Logf = func(msg string) { fmt.Println(msg) }
 		go follow.Run(ctx)
 		go func() {
@@ -157,6 +160,17 @@ func main() {
 		// refreshed each time so newly learned facts apply at once.
 		if snap, snapErr := store.SnapshotText(30); snapErr == nil && snap != "" {
 			system += "\n\nWhat you remember about the user:\n" + snap
+		}
+		// Fritz does have eyes: say so, truthfully, from the
+		// tracker's live presence. Without this the model denies
+		// being able to see the user at all. Presence only — it
+		// cannot make out details, clothes, or expressions.
+		if follow != nil {
+			if follow.Present() {
+				system += "\nYou have a camera on your desk and your eyes are following the user's face right now: you can see that they are there. If they ask whether you can see them, say yes."
+			} else {
+				system += "\nYou have a camera on your desk, but you cannot see the user right now (they may have stepped away). If they ask whether you can see them, say not at the moment."
+			}
 		}
 		messages := []meta.Message{
 			{Role: "system", Content: system},
