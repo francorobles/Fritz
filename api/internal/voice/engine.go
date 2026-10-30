@@ -45,14 +45,20 @@ type Engine struct {
 }
 
 type engineJob struct {
-	render  chan []byte     // non-nil: return the audio instead of playing it
-	onAudio func(time.Time) // play jobs: called when its audio starts streaming
+	render  chan []byte // non-nil: return the audio instead of playing it
+	onAudio OnAudio     // play jobs: called when its audio starts streaming
 }
 
 type playItem struct {
 	pcm     []byte
-	onStart func(time.Time)
+	onStart OnAudio
 }
+
+// OnAudio is told when a sentence starts playing, and how much
+// silence came before it since the previous audio ended. Within a
+// reply that gap is the stutter a listener hears: piper (or the
+// model) not keeping up with playback.
+type OnAudio func(at time.Time, gap time.Duration)
 
 // Playback pacing. The writer keeps engineLead of audio ahead of the
 // wall clock in chunks of engineTick; aplay's own buffer is kept
@@ -79,7 +85,8 @@ func NewEngine(ctx context.Context, voicePath string) (*Engine, error) {
 	}
 	e := &Engine{rate: PiperSampleRate(voicePath), dir: dir, progress: time.Now()}
 
-	e.piper = exec.CommandContext(ctx, "piper", "--model", voicePath, "--output_dir", dir)
+	args := append([]string{"--model", voicePath, "--output_dir", dir}, PiperArgs()...)
+	e.piper = exec.CommandContext(ctx, "piper", args...)
 	if e.piperIn, err = e.piper.StdinPipe(); err != nil {
 		return nil, err
 	}
@@ -118,7 +125,7 @@ func NewEngine(ctx context.Context, voicePath string) (*Engine, error) {
 // Say queues one sentence: piper synthesizes it and it plays after
 // everything queued before it. onAudio (may be nil) is called when
 // its audio starts streaming to the speaker.
-func (e *Engine) Say(sentence string, onAudio func(time.Time)) error {
+func (e *Engine) Say(sentence string, onAudio OnAudio) error {
 	sentence = oneLine(sentence)
 	if sentence == "" {
 		return nil
@@ -290,7 +297,14 @@ func (e *Engine) play(ctx context.Context) {
 				chunk = silence
 			}
 			if onStart != nil {
-				onStart(time.Now())
+				e.mu.Lock()
+				prevEnd := e.playEnd
+				e.mu.Unlock()
+				var gap time.Duration
+				if !prevEnd.IsZero() {
+					gap = start.Add(pos).Sub(prevEnd)
+				}
+				onStart(time.Now(), gap)
 			}
 			if _, err := e.aplayIn.Write(chunk); err != nil {
 				e.mu.Lock()
@@ -315,7 +329,7 @@ func (e *Engine) play(ctx context.Context) {
 // next pops up to n bytes of queued audio. chunk is nil when nothing
 // is queued; onStart is set on an item's first chunk; finished is
 // true on its last.
-func (e *Engine) next(n int) (chunk []byte, onStart func(time.Time), finished bool) {
+func (e *Engine) next(n int) (chunk []byte, onStart OnAudio, finished bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if len(e.queue) == 0 {

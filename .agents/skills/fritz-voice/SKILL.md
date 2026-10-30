@@ -75,8 +75,15 @@ Pi 4). Say so in the README and demo — it isn't a Meta model.
   aplay -D pipewire -r 22050 -f S16_LE -c 1 -t raw -q` (the sample rate must
   match the voice's `.onnx.json`). Output goes to the Echo Dot.
 - Speak sentence by sentence as the agent's reply arrives, so the first words
-  start sooner. The first chunk may end at a comma (`Splitter{FirstClause:
-  true}`), and the prompt asks for a short first sentence.
+  start sooner; the prompt asks for a short first sentence. Splitting the
+  first chunk at a comma (`FRITZ_FIRST_CLAUSE=1`) is off by default: it
+  stalls mid-sentence and sounds choppy.
+- Every sentence goes through `voice.Speakable` (strips markdown, emoji,
+  URLs, email addresses) before piper, so symbols are never read aloud.
+- Tune the voice without a rebuild: `FRITZ_PIPER_ARGS="--length_scale 0.95
+  --noise_w 0.9 --sentence_silence 0.15"`.
+- `[pause 0.6s before "..."]` in the log = playback ran dry mid-reply
+  (voice too heavy for the Pi, or a slow tool).
 - `voice.Engine` keeps ONE piper (`--output_dir`, one WAV per line) and ONE
   aplay stream open for the whole session, writing silence between replies
   so the Bluetooth sink never sleeps. Don't go back to a piper per reply:

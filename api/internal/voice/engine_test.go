@@ -106,7 +106,11 @@ func TestEngineSpeaksInOrder(t *testing.T) {
 	}
 
 	var started []time.Time
-	onAudio := func(at time.Time) { started = append(started, at) }
+	var gaps []time.Duration
+	onAudio := func(at time.Time, gap time.Duration) {
+		started = append(started, at)
+		gaps = append(gaps, gap)
+	}
 	begin := time.Now()
 	e.PlayPCM(ack)
 	if err := e.Say("Hi there.", onAudio); err != nil {
@@ -123,6 +127,10 @@ func TestEngineSpeaksInOrder(t *testing.T) {
 	}
 	if len(started) != 2 {
 		t.Errorf("onAudio called %d times, want once per sentence", len(started))
+	} else if gaps[1] > 50*time.Millisecond {
+		// Both sentences were queued together: the second must
+		// follow the first with no added silence.
+		t.Errorf("gap before sentence 2 = %s, want ~0 (back to back)", gaps[1])
 	}
 
 	data := waitPlayed(t, played, 3*n)
@@ -174,5 +182,21 @@ func TestSplitterFirstClause(t *testing.T) {
 	var plain Splitter
 	if got := plain.Feed("Sure, it is 9. "); len(got) != 1 || got[0] != "Sure, it is 9." {
 		t.Errorf("default Feed = %q, want one whole sentence", got)
+	}
+}
+
+func TestSpeakable(t *testing.T) {
+	for in, want := range map[string]string{
+		"**Sure!** You have 2 emails 📧":                         "Sure! You have 2 emails",
+		"Sarah <sarah@example.com> wrote back.":                 "Sarah wrote back.",
+		"- Standup at 9\n- Lunch & demo":                        "Standup at 9 Lunch and demo",
+		"See https://example.com/x for more.":                   "See a link for more.",
+		"Your 3:30 meeting — with Dan — moved.":                 "Your 3:30 meeting, with Dan, moved.",
+		"It's 72°F and sunny.":                                  "It's 72°F and sunny.",
+		"Plain text stays exactly the same, numbers 1,000 too.": "Plain text stays exactly the same, numbers 1,000 too.",
+	} {
+		if got := Speakable(in); got != want {
+			t.Errorf("Speakable(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

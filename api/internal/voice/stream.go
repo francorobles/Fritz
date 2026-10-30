@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -26,7 +27,7 @@ func StartSpeaker(ctx context.Context, voicePath string) (*Speaker, error) {
 		return nil, fmt.Errorf("FRITZ_PIPER_VOICE is unset (path to the Piper .onnx voice)")
 	}
 	rate := PiperSampleRate(voicePath)
-	piper := exec.CommandContext(ctx, "piper", "--model", voicePath, "--output-raw")
+	piper := exec.CommandContext(ctx, "piper", append([]string{"--model", voicePath, "--output-raw"}, PiperArgs()...)...)
 	stdin, err := piper.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -72,6 +73,15 @@ func (s *Speaker) Close() error {
 		return fmt.Errorf("aplay: %w", err)
 	}
 	return nil
+}
+
+// PiperArgs are extra piper flags from FRITZ_PIPER_ARGS, for tuning
+// how the voice sounds without a rebuild, e.g.
+// "--length_scale 0.95 --noise_w 0.9 --sentence_silence 0.15"
+// (length_scale < 1 speaks faster; noise_w adds rhythm variation;
+// sentence_silence is the pause after each sentence, default 0.2).
+func PiperArgs() []string {
+	return strings.Fields(os.Getenv("FRITZ_PIPER_ARGS"))
 }
 
 // Splitter cuts streamed reply text into speakable sentences.
