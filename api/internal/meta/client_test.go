@@ -117,6 +117,59 @@ func TestChatStreamReturnsPartialOnMidError(t *testing.T) {
 	}
 }
 
+func TestChatWithModelAndJSON(t *testing.T) {
+	var gotModel, gotFormat string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Model          string `json:"model"`
+			ResponseFormat struct {
+				Type       string `json:"type"`
+				JSONSchema struct {
+					Name string `json:"name"`
+				} `json:"json_schema"`
+			} `json:"response_format"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Errorf("request JSON: %v", err)
+		}
+		gotModel = req.Model
+		gotFormat = req.ResponseFormat.Type + "/" + req.ResponseFormat.JSONSchema.Name
+		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"{\"add\":[]}"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	old := BaseURL
+	BaseURL = server.URL
+	defer func() { BaseURL = old }()
+
+	client := &Client{APIKey: "test-key"}
+	reply, err := client.ChatJSON(context.Background(), ModelWonder,
+		[]Message{{Role: "user", Content: "consolidate"}},
+		"memory_diff", map[string]any{"type": "object"})
+	if err != nil {
+		t.Fatalf("ChatJSON: %v", err)
+	}
+	if reply != `{"add":[]}` {
+		t.Errorf("reply = %q", reply)
+	}
+	if gotModel != ModelWonder {
+		t.Errorf("model = %q, want %q", gotModel, ModelWonder)
+	}
+	if gotFormat != "json_schema/memory_diff" {
+		t.Errorf("response_format = %q, want json_schema/memory_diff", gotFormat)
+	}
+
+	// Plain Chat still defaults to Spark with no response_format.
+	reply, err = client.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if gotModel != ModelSpark {
+		t.Errorf("Chat model = %q, want %q", gotModel, ModelSpark)
+	}
+}
+
 func TestChatRetriesOnceOn500(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -45,9 +45,10 @@ func (c *Client) httpClient() *http.Client {
 }
 
 type chatRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Stream   bool      `json:"stream,omitempty"`
+	Model          string    `json:"model"`
+	Messages       []Message `json:"messages"`
+	Stream         bool      `json:"stream,omitempty"`
+	ResponseFormat any       `json:"response_format,omitempty"`
 }
 
 type chatResponse struct {
@@ -63,7 +64,32 @@ type chatResponse struct {
 // Chat sends messages to Muse Spark and returns the assistant's reply
 // text. Retries 429/5xx once with a short backoff, per the skill.
 func (c *Client) Chat(ctx context.Context, messages []Message) (string, error) {
-	body, err := json.Marshal(chatRequest{Model: ModelSpark, Messages: messages})
+	return c.ChatWithModel(ctx, ModelSpark, messages)
+}
+
+// ChatWithModel is Chat with an explicit model ID — e.g. ModelWonder
+// for the nightly memory consolidation, which wants the biggest
+// reasoning model and no latency pressure.
+func (c *Client) ChatWithModel(ctx context.Context, model string, messages []Message) (string, error) {
+	return c.chatWithFormat(ctx, model, messages, nil)
+}
+
+// ChatJSON is ChatWithModel with a JSON Schema in response_format,
+// so the reply is constrained to JSON matching schema (structured
+// output; name identifies the schema). Callers parse the returned
+// JSON themselves — it matches the schema but is still model output.
+func (c *Client) ChatJSON(ctx context.Context, model string, messages []Message, name string, schema any) (string, error) {
+	return c.chatWithFormat(ctx, model, messages, map[string]any{
+		"type": "json_schema",
+		"json_schema": map[string]any{
+			"name":   name,
+			"schema": schema,
+		},
+	})
+}
+
+func (c *Client) chatWithFormat(ctx context.Context, model string, messages []Message, format any) (string, error) {
+	body, err := json.Marshal(chatRequest{Model: model, Messages: messages, ResponseFormat: format})
 	if err != nil {
 		return "", err
 	}

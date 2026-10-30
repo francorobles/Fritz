@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/face"
+	"github.com/francorobles/fritz/api/internal/memory"
 	"github.com/francorobles/fritz/api/internal/meta"
 	"github.com/francorobles/fritz/api/internal/voice"
 )
@@ -58,6 +59,26 @@ func main() {
 		defer faceClient.Close()
 	}
 
+	// Long-term memory (fritz.db by default; FRITZ_DB overrides).
+	// Fritz remembers conversations and routines across restarts;
+	// a store that can't open is a config error worth dying for —
+	// silently forgetting everything is worse.
+	dbPath := os.Getenv("FRITZ_DB")
+	if dbPath == "" {
+		dbPath = "fritz.db"
+	}
+	store, err := memory.Open(dbPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "memory store:", err, "(set FRITZ_DB to a writable path)")
+		os.Exit(1)
+	}
+	defer store.Close()
+	if snap, snapErr := store.SnapshotText(30); snapErr == nil && snap != "" {
+		fmt.Printf("memory: recalling memories and recent conversation (%s)\n", dbPath)
+	} else {
+		fmt.Printf("memory: fresh store (%s) — I will start learning\n", dbPath)
+	}
+
 	fmt.Printf("voicecheck: streaming mic (%s) — say \"Hi Fritz\", Ctrl-C to stop\n", mic)
 	if os.Getenv("FRITZ_PIPER_VOICE") == "" {
 		fmt.Println("note: FRITZ_PIPER_VOICE unset — replies will be printed, not spoken")
@@ -81,7 +102,18 @@ func main() {
 	// (plus 700 ms for Bluetooth delay, so it doesn't hear itself
 	// through the Echo), and the follow-up window opens when
 	// speaking finishes.
+	// Conversation context survives restarts: the last ~10 turns
+	// come back from the store, older context via the memory
+	// snapshot injected below.
 	var history []meta.Message
+	if turns, terr := store.RecentTurns(20); terr == nil {
+		for _, t := range turns {
+			history = append(history, meta.Message{Role: t.Role, Content: t.Content})
+		}
+		if len(turns) > 0 {
+			fmt.Printf("memory: restored %d recent turns\n", len(turns))
+		}
+	}
 	var replyMu sync.Mutex
 	respond := func(request string) {
 		replyMu.Lock()
@@ -92,11 +124,17 @@ func main() {
 			faceClient.Emotion("thinking")
 		}
 		now := time.Now()
+		system := fmt.Sprintf(
+			"You are Fritz, a warm desk companion. Your replies are spoken aloud: "+
+				"answer in 1-3 short sentences, no markdown, no lists, no URLs. "+
+				"The current local time is %s.", now.Format("Mon 2 Jan 2006, 3:04 PM"))
+		// What Fritz remembers about the user goes in every turn,
+		// refreshed each time so newly learned facts apply at once.
+		if snap, snapErr := store.SnapshotText(30); snapErr == nil && snap != "" {
+			system += "\n\nWhat you remember about the user:\n" + snap
+		}
 		messages := []meta.Message{
-			{Role: "system", Content: fmt.Sprintf(
-				"You are Fritz, a warm desk companion. Your replies are spoken aloud: "+
-					"answer in 1-3 short sentences, no markdown, no lists, no URLs. "+
-					"The current local time is %s.", now.Format("Mon 2 Jan 2006, 3:04 PM"))},
+			{Role: "system", Content: system},
 		}
 		messages = append(messages, history...)
 		messages = append(messages, meta.Message{Role: "user", Content: request})
@@ -186,6 +224,14 @@ func main() {
 			meta.Message{Role: "assistant", Content: text})
 		if len(history) > 20 { // keep roughly the last 10 turns
 			history = history[len(history)-20:]
+		}
+		// Persist the exchange so the next start remembers it and
+		// the nightly consolidation can learn from it.
+		if err := store.AddTurn("user", request); err != nil {
+			fmt.Println("memory error:", err)
+		}
+		if err := store.AddTurn("assistant", text); err != nil {
+			fmt.Println("memory error:", err)
 		}
 	}
 	// handleTurn runs one completed turn through the wake tracker.
