@@ -307,6 +307,54 @@ func TestSpeakerFeedsLines(t *testing.T) {
 	}
 }
 
+func TestLooksIncomplete(t *testing.T) {
+	// Real fragments from a Pi log: endpointing on these answered
+	// half a sentence, which felt like being interrupted.
+	midThought := []string{
+		"Hey Fritz can you check if there's an email from me coming from",
+		"check if there's",
+		"remind me to",
+		"what is the",
+		"look at my",
+		"I was wondering if",
+		"tell me about",
+	}
+	for _, s := range midThought {
+		if !LooksIncomplete(s) {
+			t.Errorf("LooksIncomplete(%q) = false, want true (mid-thought)", s)
+		}
+	}
+	finished := []string{
+		"Hey Fritz can you check if there's an email from me coming from Raya",
+		"what time is it?",
+		"Hi Fritz.",
+		"check my email",
+		"yes",
+		"create that Friday two pm event", // ends on a content word
+		"",
+	}
+	for _, s := range finished {
+		if LooksIncomplete(s) {
+			t.Errorf("LooksIncomplete(%q) = true, want false (finished)", s)
+		}
+	}
+}
+
+func TestStallWait(t *testing.T) {
+	base := 1200 * time.Millisecond
+	if got := StallWait("what time is it", base); got != base {
+		t.Errorf("finished text wait = %v, want base %v", got, base)
+	}
+	if got := StallWait("email coming from", base); got != 3600*time.Millisecond {
+		t.Errorf("mid-thought wait = %v, want 3x base (3.6s)", got)
+	}
+	// The 2.5 s floor: even a fast base stall never cuts a
+	// mid-thought pause short.
+	if got := StallWait("email coming from", 500*time.Millisecond); got != 2500*time.Millisecond {
+		t.Errorf("mid-thought floor = %v, want 2.5s", got)
+	}
+}
+
 func TestTracker(t *testing.T) {
 	now := time.Unix(1000, 0)
 	tr := &Tracker{}

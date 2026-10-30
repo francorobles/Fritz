@@ -475,7 +475,9 @@ func main() {
 	// leaves a request unheard. A late server completion carrying
 	// the same text is dropped by handleTurn's dedupe. stallFor
 	// (FRITZ_STALL_MS) trades speed against cutting off a slow
-	// talker mid-pause.
+	// talker mid-pause; text that looks mid-thought ("…coming
+	// from") waits 3x longer (voice.StallWait), because a paused
+	// sentence is not a finished one.
 	go func() {
 		const poll = 100 * time.Millisecond
 		ticker := time.NewTicker(poll)
@@ -499,7 +501,7 @@ func main() {
 					lastText, stableSince = text, now
 					continue
 				}
-				if now.Sub(stableSince) < stallFor {
+				if now.Sub(stableSince) < voice.StallWait(text, stallFor) {
 					continue
 				}
 				lastText, stableSince = "", time.Time{}

@@ -85,7 +85,10 @@ Pi 4). Say so in the README and demo — it isn't a Meta model.
 - If Spark's first sentence takes longer than `FRITZ_ACK_AFTER_MS` (default
   600, `0` = off), a pre-rendered "Mm-hm." / "One sec." plays first.
 - Local endpointing waits `FRITZ_STALL_MS` (default 900) of unchanged
-  partials. Lower is faster but can cut off a slow talker.
+  partials. Text that looks mid-thought (trailing "…coming from",
+  "…check if there's") waits 3x as long, floor 2.5 s
+  (`voice.StallWait`) — a paused sentence is not a finished one, and
+  answering the fragment feels like being interrupted.
 - `voicecheck` prints a `[timing]` line per reply (end of speech → request,
   Spark → first sentence, Piper → first audio). Measure before tuning.
 - Face: `speaking on` before the first chunk, `speaking off` after the last.

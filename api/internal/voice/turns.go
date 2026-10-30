@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
@@ -69,4 +70,63 @@ func (t *Tracker) Awake(now time.Time) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.wakeOnlyPending || now.Before(t.awakeUntil)
+}
+
+// danglingWords never end a finished sentence: articles,
+// prepositions, conjunctions, determiners, and auxiliaries. A
+// transcript trailing one is a mid-thought pause ("…an email
+// from me coming from", "…check if there's"), not the end of a
+// turn — endpointing there answers a fragment, which feels like
+// being interrupted.
+var danglingWords = map[string]bool{
+	"a": true, "an": true, "the": true,
+	"from": true, "to": true, "of": true, "for": true, "with": true,
+	"without": true, "about": true, "on": true, "in": true, "at": true,
+	"by": true, "over": true, "under": true, "into": true, "than": true,
+	"if": true, "and": true, "or": true, "but": true, "because": true,
+	"so": true, "as": true, "when": true, "while": true,
+	"my": true, "your": true, "his": true, "her": true, "their": true,
+	"our": true, "this": true, "that": true, "these": true, "those": true,
+	"is": true, "are": true, "was": true, "were": true, "be": true,
+	"been": true, "am": true, "do": true, "does": true, "did": true,
+	"can": true, "could": true, "will": true, "would": true,
+	"shall": true, "should": true, "may": true, "might": true,
+	"must": true, "have": true, "has": true, "had": true,
+	"there's": true, "theres": true, "it's": true, "its": true,
+}
+
+// LooksIncomplete reports whether a transcript reads like the
+// speaker stopped mid-thought: it ends on a dangling word (above)
+// rather than sentence-final punctuation or a content word.
+func LooksIncomplete(text string) bool {
+	text = strings.TrimSpace(strings.ToLower(text))
+	if text == "" {
+		return false
+	}
+	if last := text[len(text)-1]; last == '.' || last == '?' || last == '!' {
+		return false
+	}
+	words := strings.FieldsFunc(text, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r == '\'')
+	})
+	if len(words) == 0 {
+		return false
+	}
+	return danglingWords[words[len(words)-1]]
+}
+
+// StallWait is how long partials must sit unchanged before local
+// endpointing may finish the turn. Ordinary endings wait base;
+// mid-thought-looking text gets three times as long (at least
+// 2.5 s), because no single global stall distinguishes a finished
+// sentence from someone pausing to remember a name — the words do.
+func StallWait(text string, base time.Duration) time.Duration {
+	if !LooksIncomplete(text) {
+		return base
+	}
+	wait := 3 * base
+	if wait < 2500*time.Millisecond {
+		wait = 2500 * time.Millisecond
+	}
+	return wait
 }
