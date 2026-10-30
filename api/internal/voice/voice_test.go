@@ -1,8 +1,10 @@
 package voice
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -151,6 +153,48 @@ func TestSplitSentences(t *testing.T) {
 	}
 	if got := splitSentences("no punctuation"); len(got) != 1 || got[0] != "no punctuation" {
 		t.Errorf("splitSentences no-punct = %q", got)
+	}
+}
+
+// TestSpeakUsesOnePipeline checks that a multi-sentence reply starts
+// piper exactly once with the sentences as stdin lines: restarting
+// piper + aplay per sentence left seconds of dead air after every
+// period on the Pi.
+func TestSpeakUsesOnePipeline(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "piper-calls")
+	stdinLog := filepath.Join(dir, "piper-stdin")
+	piperSh := "#!/bin/sh\necho x >> " + calls + "\ncat > " + stdinLog + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "piper"), []byte(piperSh), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "aplay"), []byte("#!/bin/sh\ncat > /dev/null\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := Speak(ctx, filepath.Join(dir, "voice.onnx"), "Hi there. It is 9 AM! Anything else?"); err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	data, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("fake piper never ran: %v", err)
+	}
+	if n := strings.Count(string(data), "x"); n != 1 {
+		t.Errorf("piper invocations = %d, want 1", n)
+	}
+	raw, err := os.ReadFile(stdinLog)
+	if err != nil {
+		t.Fatalf("fake piper got no stdin: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 3 {
+		t.Errorf("piper stdin lines = %q, want the 3 sentences", lines)
+	}
+	if err := Speak(ctx, "", "hi"); err == nil {
+		t.Error("Speak with no voice path must error")
 	}
 }
 

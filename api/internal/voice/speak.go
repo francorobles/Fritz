@@ -30,26 +30,26 @@ func PiperSampleRate(voicePath string) int {
 }
 
 // Speak synthesizes text with Piper and plays it through PipeWire
-// (the Echo Dot on the Pi). It speaks sentence by sentence so the
-// first words start sooner; callers keep the mic muted while it runs
+// (the Echo Dot on the Pi). The whole reply goes through ONE piper
+// + aplay pipeline: sentences are fed as stdin lines (Piper
+// synthesizes line by line and streams raw audio, so playback still
+// starts as soon as the first sentence is ready), and the model is
+// loaded and the speaker opened only once. Restarting both
+// processes per sentence left seconds of dead air after every
+// period on the Pi. Callers keep the mic muted while Speak runs
 // (see Client.Muted) and for ~700 ms after, for Bluetooth delay.
 // voicePath comes from FRITZ_PIPER_VOICE at the call site.
 func Speak(ctx context.Context, voicePath, text string) error {
 	if voicePath == "" {
 		return fmt.Errorf("FRITZ_PIPER_VOICE is unset (path to the Piper .onnx voice)")
 	}
-	for _, sentence := range splitSentences(text) {
-		if err := speakSentence(ctx, voicePath, sentence); err != nil {
-			return err
-		}
+	sentences := splitSentences(text)
+	if len(sentences) == 0 {
+		return nil
 	}
-	return nil
-}
-
-func speakSentence(ctx context.Context, voicePath, text string) error {
 	rate := PiperSampleRate(voicePath)
 	piper := exec.CommandContext(ctx, "piper", "--model", voicePath, "--output-raw")
-	piper.Stdin = strings.NewReader(text)
+	piper.Stdin = strings.NewReader(strings.Join(sentences, "\n") + "\n")
 	aplay := exec.CommandContext(ctx, "aplay", "-D", "pipewire",
 		"-r", fmt.Sprint(rate), "-f", "S16_LE", "-c", "1", "-t", "raw", "-q")
 	pipe, err := piper.StdoutPipe()
