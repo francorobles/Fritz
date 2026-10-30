@@ -20,7 +20,6 @@ var RealtimeURL = "wss://api.meta.ai/v1/asr/realtime"
 const (
 	// chunkBytes is 100 ms of 16 kHz mono s16le audio.
 	chunkBytes = 3200
-	chunkEvery = 100 * time.Millisecond
 	// Sessions last at most 60 minutes; callers should reconnect
 	// before that (Run returns, the caller starts a new session).
 	sessionLimit = 55 * time.Minute
@@ -117,10 +116,12 @@ func (c *Client) Run(ctx context.Context, audio io.Reader, onEvent func(Event)) 
 		}
 	}()
 
-	// Pump: one chunk per tick, never faster than real time (the API
-	// accepts at most ~5 s of audio ahead of the clock).
-	ticker := time.NewTicker(chunkEvery)
-	defer ticker.Stop()
+	// Pump: read exactly one 100 ms chunk and send it immediately.
+	// The mic itself paces this at real time (a full chunk takes
+	// 100 ms to record), so no ticker is needed — adding one on top
+	// of fragmented pipe reads made the stream fall behind the clock
+	// and replies feel slower and slower. ReadFull blocks until the
+	// chunk is whole (or the source ends), which is the pacing.
 	buf := make([]byte, chunkBytes)
 	silence := make([]byte, chunkBytes)
 pump:
@@ -130,9 +131,9 @@ pump:
 			break pump
 		case err := <-readErr:
 			return err
-		case <-ticker.C:
+		default:
 		}
-		n, readErr2 := audio.Read(buf)
+		n, readErr2 := io.ReadFull(audio, buf)
 		if n > 0 {
 			chunk := buf[:n]
 			if c.Muted.Load() {
@@ -142,7 +143,7 @@ pump:
 				return fmt.Errorf("voice: send audio: %w", err)
 			}
 		}
-		if readErr2 == io.EOF {
+		if readErr2 == io.EOF || readErr2 == io.ErrUnexpectedEOF {
 			break pump
 		}
 		if readErr2 != nil {

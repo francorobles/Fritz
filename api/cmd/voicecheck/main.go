@@ -98,6 +98,8 @@ func main() {
 		messages = append(messages, history...)
 		messages = append(messages, meta.Message{Role: "user", Content: request})
 
+		fmt.Println("(thinking...)")
+		chatStart := time.Now()
 		reply, err := chat.Chat(ctx, messages)
 		if err != nil {
 			fmt.Println("reply error:", err)
@@ -107,7 +109,7 @@ func main() {
 			return
 		}
 		reply = strings.TrimSpace(reply)
-		fmt.Printf("Fritz: %s\n", reply)
+		fmt.Printf("Fritz: %s  [model took %s]\n", reply, time.Since(chatStart).Round(time.Millisecond))
 		history = append(history,
 			meta.Message{Role: "user", Content: request},
 			meta.Message{Role: "assistant", Content: reply})
@@ -120,7 +122,11 @@ func main() {
 			faceClient.Speaking(true)
 		}
 		client.Muted.Store(true)
+		speakStart := time.Now()
 		speakErr := voice.Speak(ctx, piperVoice, reply)
+		if speakErr == nil {
+			fmt.Printf("[spoken in %s]\n", time.Since(speakStart).Round(time.Millisecond))
+		}
 		// Bluetooth tail: keep muting briefly after playback ends.
 		select {
 		case <-ctx.Done():
