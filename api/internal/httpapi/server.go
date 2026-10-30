@@ -17,9 +17,11 @@ import (
 
 // Deps are the router's collaborators. A nil Store disables the
 // memory routes (503); a nil Meta disables consolidation (503).
+// WhatsAppHook, when set, is mounted at /webhooks/whatsapp.
 type Deps struct {
-	Store *memory.Store
-	Meta  *meta.Client
+	Store        *memory.Store
+	Meta         *meta.Client
+	WhatsAppHook http.Handler
 }
 
 // NewRouter returns the API's HTTP handler.
@@ -47,6 +49,13 @@ func NewRouter(d Deps) http.Handler {
 	// Consolidation calls Muse Wonder, which thinks slowly —
 	// it gets minutes, not the dashboard's 30 s.
 	r.With(middleware.Timeout(10*time.Minute)).Post("/memory/consolidate", h.consolidate)
+	// WhatsApp webhooks: Meta expects fast ACKs and handles its
+	// own retries, so no dashboard timeout here. Reachable only
+	// if you expose it (Tailscale Funnel / tunnel) — the handler
+	// itself enforces signatures and the owner allowlist.
+	if d.WhatsAppHook != nil {
+		r.Handle("/webhooks/whatsapp", d.WhatsAppHook)
+	}
 	return r
 }
 

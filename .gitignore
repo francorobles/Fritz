@@ -31,3 +31,6 @@ google-client*.json
 *token.json
 *.env
 !*.env.example
+
+# Integrations config (non-secret settings; lives in FRITZ_CONFIG_DIR, never the repo)
+integrations.json
