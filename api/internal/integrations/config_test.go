@@ -64,10 +64,10 @@ func TestSecretResolution(t *testing.T) {
 func TestRegistryStatuses(t *testing.T) {
 	t.Setenv("FRITZ_CONFIG_DIR", t.TempDir())
 
-	// Everything off: five statuses, none ready.
+	// Everything off: six statuses, none ready.
 	reg := Build(Config{}, nil)
-	if len(reg.Status) != 5 {
-		t.Fatalf("statuses = %d, want 5", len(reg.Status))
+	if len(reg.Status) != 6 {
+		t.Fatalf("statuses = %d, want 6", len(reg.Status))
 	}
 	for _, st := range reg.Status {
 		if st.Ready || st.Enabled {
@@ -78,6 +78,7 @@ func TestRegistryStatuses(t *testing.T) {
 	// Enabled but unconfigured surfaces as not-ready with a reason.
 	reg = Build(Config{
 		Gmail:    GmailConfig{Enabled: true}, // no client/token files in temp dir
+		Calendar: CalendarConfig{Enabled: true},
 		WorkMail: WorkMailConfig{Enabled: true, Address: "a@b.example", PasswordEnv: "FRITZ_UNSET_PW"},
 		WhatsApp: WhatsAppConfig{Enabled: true, PhoneNumberID: "1", TokenEnv: "FRITZ_UNSET_TOK"},
 	}, nil)
@@ -87,6 +88,9 @@ func TestRegistryStatuses(t *testing.T) {
 	}
 	if byName["gmail"].Ready || !strings.Contains(byName["gmail"].Detail, "googleauth") {
 		t.Errorf("gmail status = %+v, want not-ready pointing at googleauth", byName["gmail"])
+	}
+	if byName["calendar"].Ready || !strings.Contains(byName["calendar"].Detail, "googleauth") {
+		t.Errorf("calendar status = %+v, want not-ready pointing at googleauth", byName["calendar"])
 	}
 	if byName["workmail"].Ready || !strings.Contains(byName["workmail"].Detail, "FRITZ_UNSET_PW") {
 		t.Errorf("workmail status = %+v", byName["workmail"])

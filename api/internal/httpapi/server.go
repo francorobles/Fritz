@@ -11,6 +11,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/francorobles/fritz/api/internal/actions"
+	"github.com/francorobles/fritz/api/internal/agent"
 	"github.com/francorobles/fritz/api/internal/memory"
 	"github.com/francorobles/fritz/api/internal/meta"
 )
@@ -18,10 +20,15 @@ import (
 // Deps are the router's collaborators. A nil Store disables the
 // memory routes (503); a nil Meta disables consolidation (503).
 // WhatsAppHook, when set, is mounted at /webhooks/whatsapp.
+// Actions + AppToken mount the phone's /actions approval routes
+// (Bearer auth); both must be set, or the routes stay off.
 type Deps struct {
 	Store        *memory.Store
 	Meta         *meta.Client
 	WhatsAppHook http.Handler
+	Actions      *actions.Store
+	ActionExec   map[string]agent.Executor
+	AppToken     string
 }
 
 // NewRouter returns the API's HTTP handler.
@@ -55,6 +62,18 @@ func NewRouter(d Deps) http.Handler {
 	// itself enforces signatures and the owner allowlist.
 	if d.WhatsAppHook != nil {
 		r.Handle("/webhooks/whatsapp", d.WhatsAppHook)
+	}
+	// Phone approvals (fritz-mobile-backend): the same pending
+	// actions the desk confirms by voice, behind the app token.
+	if d.Actions != nil && d.AppToken != "" {
+		ah := &actionsHandlers{store: d.Actions, exec: d.ActionExec}
+		r.Route("/actions", func(r chi.Router) {
+			r.Use(appAuth(d.AppToken))
+			r.Use(middleware.Timeout(2 * time.Minute))
+			r.Get("/pending", ah.listPending)
+			r.Post("/{id}/approve", ah.approve)
+			r.Post("/{id}/decline", ah.decline)
+		})
 	}
 	return r
 }

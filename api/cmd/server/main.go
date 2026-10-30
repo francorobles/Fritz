@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/francorobles/fritz/api/internal/actions"
+	"github.com/francorobles/fritz/api/internal/agent"
 	"github.com/francorobles/fritz/api/internal/chat"
 	"github.com/francorobles/fritz/api/internal/httpapi"
 	"github.com/francorobles/fritz/api/internal/integrations"
@@ -40,6 +42,8 @@ func main() {
 	// Integrations: config-file driven; every provider reports
 	// its own state and none of them can take the server down.
 	var hook http.Handler
+	var actStore *actions.Store
+	var execMap map[string]agent.Executor
 	icfg, icfgPath, err := integrations.Load()
 	if err != nil {
 		log.Printf("integrations config: %v (continuing without)", err)
@@ -61,6 +65,27 @@ func main() {
 			}
 			log.Printf("integration %-9s %-6s %s", st.Name, state, st.Detail)
 		}
+		// Pending actions share the memory database. The phone
+		// approves through /actions (app token), WhatsApp and
+		// voice through the same Go-checked confirmer — all
+		// claim atomically, so an action executes exactly once.
+		if opened, aerr := actions.Open(dbPath); aerr != nil {
+			log.Printf("actions: store unavailable: %v", aerr)
+		} else {
+			actStore = opened
+			defer actStore.Close()
+			if reg.Calendar != nil {
+				execMap = map[string]agent.Executor{
+					"calendar_create": agent.CalendarCreateExecutor(reg.Calendar),
+				}
+			}
+			if brain != nil {
+				brain.Confirmer = &agent.Confirmer{Store: actStore, Exec: execMap}
+			}
+			if os.Getenv("FRITZ_APP_TOKEN") == "" {
+				log.Print("FRITZ_APP_TOKEN unset — /actions phone approval routes are off")
+			}
+		}
 		if reg.WhatsAppHook != nil {
 			reg.WhatsAppHook.Logf = func(msg string) { log.Print(msg) }
 			hook = reg.WhatsAppHook
@@ -73,5 +98,8 @@ func main() {
 		Store:        store,
 		Meta:         metaClient,
 		WhatsAppHook: hook,
+		Actions:      actStore,
+		ActionExec:   execMap,
+		AppToken:     os.Getenv("FRITZ_APP_TOKEN"),
 	})))
 }

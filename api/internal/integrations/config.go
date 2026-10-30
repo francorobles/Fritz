@@ -20,10 +20,17 @@ import (
 // Config is integrations.json.
 type Config struct {
 	Gmail    GmailConfig    `json:"gmail"`
+	Calendar CalendarConfig `json:"calendar"`
 	WorkMail WorkMailConfig `json:"workmail"`
 	Outlook  OutlookConfig  `json:"outlook"`
 	Jira     JiraConfig     `json:"jira"`
 	WhatsApp WhatsAppConfig `json:"whatsapp"`
+}
+
+// CalendarConfig is Google Calendar. It shares Gmail's OAuth
+// token (googleauth already consents to calendar.events).
+type CalendarConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 // GmailConfig needs no secrets: the OAuth client and token are

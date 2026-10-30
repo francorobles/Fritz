@@ -6,8 +6,8 @@ import "context"
 // mailcheck prints these and the server logs them, so a broken
 // or half-configured provider is visible instead of silent.
 type ProviderStatus struct {
-	Name    string `json:"name"` // gmail | workmail | outlook | jira | whatsapp
-	Kind    string `json:"kind"` // mail | issues | chat
+	Name    string `json:"name"` // gmail | calendar | workmail | outlook | jira | whatsapp
+	Kind    string `json:"kind"` // mail | calendar | issues | chat
 	Enabled bool   `json:"enabled"`
 	Ready   bool   `json:"ready"`
 	Detail  string `json:"detail"`
@@ -18,6 +18,7 @@ type ProviderStatus struct {
 // HTTP server when non-nil (it needs the chat brain).
 type Registry struct {
 	Mailboxes    []Mailbox
+	Calendar     *Calendar
 	Jira         *Jira
 	WhatsApp     *WhatsApp
 	WhatsAppHook *Webhook
@@ -43,6 +44,21 @@ func Build(cfg Config, brain Replier) *Registry {
 		} else {
 			reg.Mailboxes = append(reg.Mailboxes, g)
 			st.Ready, st.Detail = true, "OAuth token loaded (live check in mailcheck)"
+		}
+	}
+	add(st)
+
+	// Google Calendar (shares Gmail's OAuth token)
+	st = ProviderStatus{Name: "calendar", Kind: "calendar", Enabled: cfg.Calendar.Enabled}
+	switch {
+	case !cfg.Calendar.Enabled:
+		st.Detail = "disabled"
+	default:
+		if cal, err := NewGoogleCalendar(context.Background()); err != nil {
+			st.Detail = err.Error()
+		} else {
+			reg.Calendar = cal
+			st.Ready, st.Detail = true, "shares the Gmail OAuth token (live check in mailcheck)"
 		}
 	}
 	add(st)

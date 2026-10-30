@@ -85,6 +85,22 @@ func main() {
 		}
 	}
 
+	if reg.Calendar != nil {
+		events, err := reg.Calendar.ListEvents(ctx, time.Now(), time.Now().AddDate(0, 0, 7), 5)
+		if err != nil {
+			fail("calendar list: %v", err)
+		} else {
+			fmt.Printf("\n[calendar] %d events in the next 7 days:\n", len(events))
+			for _, ev := range events {
+				when := ev.Start.Format("Mon Jan 2 3:04 PM")
+				if ev.AllDay {
+					when = ev.Start.Format("Mon Jan 2") + " (all day)"
+				}
+				fmt.Printf("  %s  %s\n", when, ev.Summary)
+			}
+		}
+	}
+
 	if reg.Jira != nil {
 		issues, err := reg.Jira.AssignedToMe(ctx, 5)
 		if err != nil {
