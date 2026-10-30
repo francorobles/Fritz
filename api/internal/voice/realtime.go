@@ -82,6 +82,7 @@ func (c *Client) Run(ctx context.Context, audio io.Reader, onEvent func(Event)) 
 			continue
 		}
 		if event.IsSessionAck() {
+			onEvent(event) // let callers see the session is established
 			break
 		}
 		if event.Type == "error" {

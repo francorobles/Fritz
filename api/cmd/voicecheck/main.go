@@ -56,6 +56,11 @@ func main() {
 	}
 
 	fmt.Printf("voicecheck: streaming mic (%s) — say \"Hi Fritz\", Ctrl-C to stop\n", mic)
+	if os.Getenv("FRITZ_VOICE_DEBUG") == "1" {
+		fmt.Println("debug: event logging ON — every API event will print as [event ...]")
+	} else {
+		fmt.Println("debug: off (set FRITZ_VOICE_DEBUG=1 to see raw API events)")
+	}
 	tracker := &voice.Tracker{}
 	collector := &voice.TurnCollector{}
 	debug := os.Getenv("FRITZ_VOICE_DEBUG") == "1"
