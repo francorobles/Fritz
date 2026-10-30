@@ -586,8 +586,9 @@ func main() {
 	// the same text is dropped by handleTurn's dedupe. stallFor
 	// (FRITZ_STALL_MS) trades speed against cutting off a slow
 	// talker mid-pause; text that looks mid-thought ("…coming
-	// from") waits 3x longer (voice.StallWait), because a paused
-	// sentence is not a finished one.
+	// from", "…event for me") waits much longer (voice.StallWait,
+	// 4x with a 4 s floor), because a paused sentence is not a
+	// finished one.
 	go func() {
 		const poll = 100 * time.Millisecond
 		ticker := time.NewTicker(poll)

@@ -318,6 +318,11 @@ func TestLooksIncomplete(t *testing.T) {
 		"look at my",
 		"I was wondering if",
 		"tell me about",
+		// From the Pi log: cut at "for me", continuation became
+		// a second prompt and Fritz answered a fragment twice.
+		"Hey Fritz, can you create a event for me",
+		"Hey Fritz, can you create a event for me today at,",
+		"can you create",
 	}
 	for _, s := range midThought {
 		if !LooksIncomplete(s) {
@@ -345,13 +350,13 @@ func TestStallWait(t *testing.T) {
 	if got := StallWait("what time is it", base); got != base {
 		t.Errorf("finished text wait = %v, want base %v", got, base)
 	}
-	if got := StallWait("email coming from", base); got != 3600*time.Millisecond {
-		t.Errorf("mid-thought wait = %v, want 3x base (3.6s)", got)
+	if got := StallWait("email coming from", base); got != 4800*time.Millisecond {
+		t.Errorf("mid-thought wait = %v, want 4x base (4.8s)", got)
 	}
-	// The 2.5 s floor: even a fast base stall never cuts a
+	// The 4 s floor: even a fast base stall never cuts a
 	// mid-thought pause short.
-	if got := StallWait("email coming from", 500*time.Millisecond); got != 2500*time.Millisecond {
-		t.Errorf("mid-thought floor = %v, want 2.5s", got)
+	if got := StallWait("email coming from", 500*time.Millisecond); got != 4*time.Second {
+		t.Errorf("mid-thought floor = %v, want 4s", got)
 	}
 }
 

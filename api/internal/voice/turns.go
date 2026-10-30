@@ -87,6 +87,15 @@ var danglingWords = map[string]bool{
 	"so": true, "as": true, "when": true, "while": true,
 	"my": true, "your": true, "his": true, "her": true, "their": true,
 	"our": true, "this": true, "that": true, "these": true, "those": true,
+	// Object pronouns: "…create an event for me" stopped for a
+	// title/time is mid-thought, not a finished request.
+	"me": true, "us": true, "him": true, "them": true, "you": true,
+	// Bare request verbs with no object yet: "…can you create".
+	"create": true, "make": true, "set": true, "schedule": true,
+	"add": true, "book": true, "cancel": true, "delete": true,
+	"remove": true, "remind": true, "tell": true, "show": true,
+	"give": true, "find": true, "search": true, "check": true,
+	"send": true, "call": true, "read": true, "write": true,
 	"is": true, "are": true, "was": true, "were": true, "be": true,
 	"been": true, "am": true, "do": true, "does": true, "did": true,
 	"can": true, "could": true, "will": true, "would": true,
@@ -117,16 +126,19 @@ func LooksIncomplete(text string) bool {
 
 // StallWait is how long partials must sit unchanged before local
 // endpointing may finish the turn. Ordinary endings wait base;
-// mid-thought-looking text gets three times as long (at least
-// 2.5 s), because no single global stall distinguishes a finished
-// sentence from someone pausing to remember a name — the words do.
+// mid-thought-looking text gets four times as long (at least
+// 4 s), because no single global stall distinguishes a finished
+// sentence from someone pausing to remember a name — the words
+// do. The longer floor costs a genuinely finished dangling-word
+// utterance a few extra seconds of silence; cutting a user off
+// mid-sentence costs the whole turn, so it wins.
 func StallWait(text string, base time.Duration) time.Duration {
 	if !LooksIncomplete(text) {
 		return base
 	}
-	wait := 3 * base
-	if wait < 2500*time.Millisecond {
-		wait = 2500 * time.Millisecond
+	wait := 4 * base
+	if wait < 4*time.Second {
+		wait = 4 * time.Second
 	}
 	return wait
 }
