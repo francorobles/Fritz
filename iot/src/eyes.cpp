@@ -39,7 +39,12 @@ Shape shape_for(Emotion emotion) {
     //          hw      hh     open   tilt    dx      dy      gx      gy     r-open
     switch (emotion) {
         case Emotion::Thinking:
-            return {0.160f, 0.080f, 0.95f, 30.0f, 0.260f, -0.006f, 0.045f, -0.032f, 1.0f};
+            // No tilt: the mirrored tilt raises both inner ends, which
+            // reads as worried brows (30° looked scared on the TFT).
+            // Pondering comes from asymmetry and an upward drift
+            // instead; center_dy is used even while vision overrides
+            // the gaze, so the eyes still roll up mid-conversation.
+            return {0.160f, 0.092f, 0.88f, 0.0f, 0.250f, -0.034f, 0.045f, -0.032f, 0.78f};
         case Emotion::Surprised:
             return {0.155f, 0.104f, 1.00f, 3.0f, 0.255f, -0.020f, 0.0f, -0.006f, 1.0f};
         case Emotion::Angry:
