@@ -45,7 +45,12 @@ echo "== stopping old voice/vision loops and stray faces"
 pkill -x voicecheck 2>/dev/null || true
 pkill -x visioncheck 2>/dev/null || true
 pkill -x voicetest 2>/dev/null || true
-sudo systemctl stop fritz-face 2>/dev/null || true
+# Bounded: a face stuck in a render call ignores SIGTERM, and an
+# older unit without TimeoutStopSec would then wait 90 s here.
+if ! sudo timeout 10 systemctl stop fritz-face 2>/dev/null; then
+    echo "   fritz-face did not stop in 10 s — killing it"
+    sudo systemctl kill -s KILL fritz-face 2>/dev/null || true
+fi
 pkill -x fritz_iot 2>/dev/null || true
 sleep 1
 

@@ -230,3 +230,22 @@ func TestConsolidateNoTurnsSkipsModel(t *testing.T) {
 		t.Errorf("no-turn consolidation: diff=%+v err=%v called=%v", diff, err, called)
 	}
 }
+
+func TestSightingsUpsert(t *testing.T) {
+	st := newStore(t)
+	seen := time.Date(2026, 11, 2, 15, 40, 0, 0, time.UTC)
+	if err := st.SaveSighting(Sighting{Name: "keys", Place: "on your right", SeenAt: seen}); err != nil {
+		t.Fatal(err)
+	}
+	gone := seen.Add(12 * time.Minute)
+	if err := st.SaveSighting(Sighting{Name: "keys", Place: "on your right", SeenAt: seen, GoneAt: gone}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Sightings()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Sightings = %+v, %v; want one row per object", got, err)
+	}
+	if !got[0].SeenAt.Equal(seen) || !got[0].GoneAt.Equal(gone) || got[0].Place != "on your right" {
+		t.Errorf("sighting = %+v", got[0])
+	}
+}

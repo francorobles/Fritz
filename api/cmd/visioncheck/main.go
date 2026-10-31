@@ -6,6 +6,10 @@
 // running the full voicecheck.
 //
 //	MODEL_API_KEY=... go run ./cmd/visioncheck [-seconds 30]
+//	MODEL_API_KEY=... go run ./cmd/visioncheck -find keys
+//
+// -find runs one SAM search for an object (what find_object does),
+// prints where it is from your seat, and points the eyes at it.
 //
 // FRITZ_VISION_DEBUG=1 prints the raw SAM output per call (the
 // easiest way to capture a parser fixture). One process owns the
@@ -32,6 +36,7 @@ func (silentGaze) GazeOff()          {}
 
 func main() {
 	seconds := flag.Int("seconds", 0, "stop after N seconds (0 = until Ctrl-C)")
+	find := flag.String("find", "", "look for one object (e.g. keys) instead of tracking, then exit")
 	flag.Parse()
 
 	apiKey := os.Getenv("MODEL_API_KEY")
@@ -66,6 +71,10 @@ func main() {
 	go frames.Run(ctx)
 
 	seg := &meta.Client{APIKey: apiKey}
+	if *find != "" {
+		findOnce(ctx, seg, gazer, frames, cfg, *find)
+		return
+	}
 	follow := vision.NewTracker(seg, gazer, frames, cfg)
 	follow.Logf = func(msg string) { fmt.Println(msg) }
 	follow.OnGaze = func(x, y float64) {
@@ -84,4 +93,40 @@ func main() {
 	fmt.Printf("visioncheck: tracking prompt %q at %.1f Hz — move around, Ctrl-C to stop\n", cfg.Prompt, cfg.HZ)
 	follow.Run(ctx) // blocks until Ctrl-C or -seconds
 	fmt.Println("visioncheck: stopped")
+}
+
+// findOnce waits for a camera frame, runs one object search, and
+// holds the eyes on the result for a few seconds.
+func findOnce(ctx context.Context, seg vision.Segmenter, gazer vision.Gazer, frames *vision.FrameSource, cfg vision.Config, name string) {
+	for {
+		if _, ok := frames.Latest(); ok {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			fmt.Println("visioncheck: no camera frame")
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	finder := vision.NewFinder(seg, frames, cfg)
+	start := time.Now()
+	s, found, err := finder.Find(ctx, name)
+	took := time.Since(start).Round(time.Millisecond)
+	switch {
+	case err != nil:
+		fmt.Printf("find %q: %v\n", name, err)
+	case !found:
+		fmt.Printf("find %q: not in view (%s) — try a simpler noun, better light, or FRITZ_VISION_DEBUG=1\n", name, took)
+	default:
+		x, y := vision.LookAt(s.Box, cfg)
+		fmt.Printf("find %q: %s (box %.2f,%.2f–%.2f,%.2f, eyes %+.2f %+.2f, %s)\n",
+			name, s.Where, s.Box.X1, s.Box.Y1, s.Box.X2, s.Box.Y2, x, y, took)
+		// The face drops a gaze after 1.5 s without a command.
+		for i := 0; i < 8; i++ {
+			gazer.Gaze(x, y)
+			time.Sleep(500 * time.Millisecond)
+		}
+		gazer.GazeOff()
+	}
 }

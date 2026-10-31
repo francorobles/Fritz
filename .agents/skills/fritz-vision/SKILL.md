@@ -60,10 +60,23 @@ Exposed to `fritz-agent`:
 - `look(question string)` — latest frame + question → `muse-spark-1.3` image
   input → short answer. For "what am I holding?", "read this label", "does
   this look right?".
-- `find_object(name string)` — SAM 3.1 with the object name → if found, send
-  `gaze` toward it for ~3 s and return a rough location ("left side of the
-  desk"). This is the "Fritz, where are my keys?" demo moment: the eyes turn
-  to look at the object.
+- `find_object(name string)` — **built** (`vision/objects.go` Finder,
+  `agent/vision.go` tool). SAM 3.1 with the object name on the latest frame;
+  if found, `Tracker.Look` holds the eyes on it for 4 s (overriding face
+  following) and the tool returns where it is *from the user's seat*
+  (`Describe`: image-left = user's right, lower = front of the desk;
+  honors `FRITZ_GAZE_MIRROR_X`). This is the "Fritz, where are my keys?"
+  demo moment.
+- **Last-seen memory** — the Finder also scans a watch list in the
+  background, one object every 10 s (`FRITZ_WATCH_OBJECTS`, default
+  `keys,wallet,glasses,phone`; `off` disables). Each sighting (place,
+  seen time, and the time it went missing) is saved in the memory store
+  (`sightings` table), so after the keys leave the frame — or after a
+  restart — Fritz answers "I last saw them at 3:40 on your right; they
+  were gone by 3:52". Only the place text and times are stored, never
+  frames.
+- Manual test: `go run ./cmd/visioncheck -find keys` (stop voicecheck
+  first — one process owns the camera).
 
 Vision must always drive an action or a conversation. A standalone "describe
 this image" feature is on the hackathon's banned list (simple image

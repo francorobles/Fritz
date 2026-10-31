@@ -37,6 +37,12 @@ CREATE TABLE IF NOT EXISTS turns (
 	created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS turns_created ON turns(created_at);
+CREATE TABLE IF NOT EXISTS sightings (
+	name TEXT PRIMARY KEY,
+	place TEXT NOT NULL,
+	seen_at TEXT NOT NULL,
+	gone_at TEXT NOT NULL DEFAULT ''
+);
 `
 
 // Store is a SQLite-backed memory store. Safe for concurrent use:

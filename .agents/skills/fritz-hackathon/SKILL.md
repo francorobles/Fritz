@@ -67,8 +67,8 @@ available in the Philippines; the Android app replaces it.
 
 - Nov 1: email reply + send ✅, activity log ✅, start WhatsApp Business
   setup (user; template approval takes time).
-- Nov 2: `find_object` + last-seen memory for keys/wallet/glasses,
-  proactive greeting on arrival.
+- Nov 2: `find_object` + last-seen memory for keys/wallet/glasses ✅,
+  proactive greeting on arrival ✅ (built Nov 1, needs a Pi test).
 - Nov 3: WhatsApp away mode (pending action → WhatsApp), simple web
   dashboard (memories + activity), README.
 - Nov 4: rehearse and record; submit with buffer before 9 PM ET.

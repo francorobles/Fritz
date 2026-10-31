@@ -31,6 +31,10 @@ SupplementaryGroups=video render input audio
 ExecStart=/opt/fritz/fritz_iot
 Restart=always
 RestartSec=2
+# The face holds no state: if it ignores SIGTERM (a render call stuck
+# while the screen is blanked), kill it after 5 s instead of the
+# default 90 s that makes run-fritz.sh look frozen.
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target

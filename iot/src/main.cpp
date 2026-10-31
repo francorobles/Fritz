@@ -2,6 +2,8 @@
 #include <iostream>
 #include <string>
 
+#include <unistd.h>
+
 #include "fritz/app.hpp"
 #include "fritz/device.hpp"
 
@@ -13,6 +15,12 @@ void handle_signal(int) {
     if (g_app != nullptr) {
         g_app->stop();
     }
+    // Hard deadline for the clean exit. With vsync on, a present can
+    // block indefinitely while the screen is blanked, so the loop
+    // never sees stop() and `systemctl stop` waits its full 90 s.
+    // SIGALRM's default action ends the process; alarm() is
+    // async-signal-safe.
+    alarm(3);
 }
 
 void print_usage(const char* argv0) {

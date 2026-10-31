@@ -72,7 +72,7 @@ turn text (from voice or web)
 | `calendar_list(from, to)` | agent/calendar.go | Built |
 | `calendar_create(title, start, end)` | agent/calendar.go | Built. **Needs confirmation** |
 | `look(question)` | vision | Camera frame + Muse Spark |
-| `find_object(name)` | vision | SAM 3.1; eyes turn to it |
+| `find_object(name)` | agent/vision.go | Built. SAM 3.1 live; eyes turn to it for 4 s; otherwise last-seen place/time from the watch-list memory |
 | `set_face(emotion)` | face | |
 | `remember(fact, kind)` | memory | kind: `routine`, `preference`, `person`, `task` |
 | `recall(query)` | memory | |
@@ -111,7 +111,15 @@ calling the tool again. Pending actions live in the shared store described in
 
 ## Proactive behavior
 
-When presence goes from absent → present and there are unread important
-emails or a meeting within 30 min, Fritz speaks first (once per
-arrival): face `surprised` for urgent, `normal` otherwise. A rate limit of
-one unprompted message per 15 min keeps it from nagging.
+Built (arrival greeting, `voicecheck`): when the tracker reports present
+after the user was away ≥ `FRITZ_GREET_AWAY_MS` (default 60 s; the first
+sighting after startup also counts), Fritz speaks first via a *proactive*
+turn: `arrivalPrompt` asks for a one-sentence hello plus the single most
+important thing (the model checks unread mail from the last 12 h and the
+next hour of calendar with its tools), and mentions actions finished
+while the user was away (activity log: approved on WhatsApp/phone). At
+most once per `FRITZ_GREET_EVERY_MS` (default 10 min); skipped mid-
+conversation; `FRITZ_GREET=off` disables. Proactive turns skip the
+confirmer, never attach a camera frame, and store only Fritz's line in
+the conversation history. The follow-up window opens after it, so the
+user can answer without the wake word.

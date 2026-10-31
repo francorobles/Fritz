@@ -55,6 +55,30 @@ type Tracker struct {
 	OnGaze func(x, y float64)
 
 	present atomic.Bool
+
+	// A held gaze ("look at the keys") overrides following until
+	// holdUntil; see Look.
+	holdMu    sync.Mutex
+	holdX     float64
+	holdY     float64
+	holdUntil time.Time
+}
+
+// Look turns the eyes to (x, y) for d, overriding face following —
+// how find_object points at what it found. Presence tracking keeps
+// running underneath.
+func (t *Tracker) Look(x, y float64, d time.Duration) {
+	t.holdMu.Lock()
+	t.holdX, t.holdY, t.holdUntil = clampUnit(x), clampUnit(y), time.Now().Add(d)
+	t.holdMu.Unlock()
+	t.face.Gaze(x, y)
+}
+
+// held returns the active gaze override, if any.
+func (t *Tracker) held() (x, y float64, ok bool) {
+	t.holdMu.Lock()
+	defer t.holdMu.Unlock()
+	return t.holdX, t.holdY, time.Now().Before(t.holdUntil)
 }
 
 // NewTracker wires a tracker to its frame source, segmenter, and
@@ -141,9 +165,11 @@ func (t *Tracker) Run(ctx context.Context) {
 			}
 			curX, curY := sx, sy
 			gmu.Unlock()
-			t.face.Gaze(curX, curY)
-			if t.OnGaze != nil {
-				t.OnGaze(curX, curY)
+			if _, _, holding := t.held(); !holding {
+				t.face.Gaze(curX, curY)
+				if t.OnGaze != nil {
+					t.OnGaze(curX, curY)
+				}
 			}
 			if !t.present.Load() && hits >= t.cfg.PresentHits {
 				t.logf("vision: user present")
@@ -158,7 +184,9 @@ func (t *Tracker) Run(ctx context.Context) {
 			smoothed = false
 			gmu.Unlock()
 			emit(false)
-			t.face.GazeOff()
+			if _, _, holding := t.held(); !holding {
+				t.face.GazeOff()
+			}
 		}
 	}
 
@@ -175,6 +203,10 @@ func (t *Tracker) Run(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-refresh.C:
+				if hx, hy, holding := t.held(); holding {
+					t.face.Gaze(hx, hy)
+					continue
+				}
 				gmu.Lock()
 				x, y, ok := sx, sy, smoothed
 				gmu.Unlock()
