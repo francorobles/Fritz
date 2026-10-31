@@ -29,7 +29,7 @@ All routes require `Authorization: Bearer $FRITZ_APP_TOKEN` (compare with
 | `GET /actions/pending` | → `[{"id","summary","kind","created_at","expires_at"}]` |
 | `POST /actions/{id}/approve` | → `{"id","status":"executed","result":"Sent to Sarah"}` |
 | `POST /actions/{id}/decline` | → `{"id","status":"declined"}` |
-| `GET /activity?limit=50` | → `[{"at","kind","text"}]` (same log as the web dashboard) |
+| `GET /activity?limit=50` | → `[{"id","at","source","kind","name","detail","ok"}]` (built; same log as the web dashboard; currently unauthenticated like `/memories`) |
 | `POST /voice/turn` | multipart `audio` (WAV 16 kHz mono s16) → `{"transcript","reply"}` |
 
 Errors: `{"error":"message"}` with a proper status (`404` unknown action,
@@ -51,8 +51,9 @@ confirmed by the user's next spoken turn **or** by the app.
 - Approve does an atomic `UPDATE ... SET status='approved' WHERE id=? AND
   status='pending'`; if 0 rows changed, return `409`. This prevents double
   sends when voice and phone approve at the same time.
-- Then execute (e.g., `gmail_send_draft`), store the result, set `executed`
-  or `failed`, and log to activity.
+- Then execute (e.g., the `email_reply` executor), store the result, set
+  `executed` or `failed`, and log to activity (built for `/actions` and
+  the voice/WhatsApp `Confirmer`).
 - Expire after 15 minutes.
 - When an action is created while the user is away (per vision presence),
   push it to the phone immediately.

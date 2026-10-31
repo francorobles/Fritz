@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/francorobles/fritz/api/internal/actions"
+	"github.com/francorobles/fritz/api/internal/activity"
 	"github.com/francorobles/fritz/api/internal/agent"
 )
 
@@ -30,8 +31,13 @@ func appAuth(token string) func(http.Handler) http.Handler {
 }
 
 type actionsHandlers struct {
-	store *actions.Store
-	exec  map[string]agent.Executor
+	store    *actions.Store
+	exec     map[string]agent.Executor
+	activity *activity.Log
+}
+
+func (h *actionsHandlers) log(a actions.Action, detail string, ok bool) {
+	_ = h.activity.Add(activity.Entry{Source: "app", Kind: activity.KindAction, Name: a.Kind, Detail: detail, OK: ok})
 }
 
 type pendingView struct {
@@ -85,16 +91,19 @@ func (h *actionsHandlers) approve(w http.ResponseWriter, r *http.Request) {
 	exec := h.exec[action.Kind]
 	if exec == nil {
 		_ = h.store.Finish(id, "no executor for "+action.Kind, true)
+		h.log(action, "no executor: "+action.Summary, false)
 		writeError(w, http.StatusInternalServerError, errors.New("no executor for "+action.Kind))
 		return
 	}
 	result, err := exec(r.Context(), json.RawMessage(action.Payload))
 	if err != nil {
 		_ = h.store.Finish(id, err.Error(), true)
+		h.log(action, "failed: "+action.Summary+" — "+err.Error(), false)
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
 	_ = h.store.Finish(id, result, false)
+	h.log(action, "approved: "+action.Summary+" — "+result, true)
 	writeJSON(w, http.StatusOK, map[string]string{
 		"id": id, "status": "executed", "result": result,
 	})
@@ -106,5 +115,6 @@ func (h *actionsHandlers) decline(w http.ResponseWriter, r *http.Request) {
 		actionError(w, err)
 		return
 	}
+	_ = h.activity.Add(activity.Entry{Source: "app", Kind: activity.KindAction, Name: "declined", Detail: "declined action " + id, OK: true})
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": "declined"})
 }

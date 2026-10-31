@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/actions"
+	"github.com/francorobles/fritz/api/internal/activity"
 	"github.com/francorobles/fritz/api/internal/agent"
 	"github.com/francorobles/fritz/api/internal/chat"
 	"github.com/francorobles/fritz/api/internal/httpapi"
@@ -43,6 +44,15 @@ func main() {
 	// its own state and none of them can take the server down.
 	var hook http.Handler
 	var actStore *actions.Store
+	// The activity log shares the database too; /activity is the
+	// dashboard's "what did Fritz do" view.
+	actLog, logErr := activity.Open(dbPath)
+	if logErr != nil {
+		log.Printf("activity: log unavailable: %v", logErr)
+		actLog = nil
+	} else {
+		defer actLog.Close()
+	}
 	var execMap map[string]agent.Executor
 	icfg, icfgPath, err := integrations.Load()
 	if err != nil {
@@ -74,13 +84,9 @@ func main() {
 		} else {
 			actStore = opened
 			defer actStore.Close()
-			if reg.Calendar != nil {
-				execMap = map[string]agent.Executor{
-					"calendar_create": agent.CalendarCreateExecutor(reg.Calendar),
-				}
-			}
+			execMap = agent.Executors(reg)
 			if brain != nil {
-				brain.Confirmer = &agent.Confirmer{Store: actStore, Exec: execMap}
+				brain.Confirmer = &agent.Confirmer{Store: actStore, Exec: execMap, Activity: actLog, Source: "whatsapp"}
 			}
 			if os.Getenv("FRITZ_APP_TOKEN") == "" {
 				log.Print("FRITZ_APP_TOKEN unset — /actions phone approval routes are off")
@@ -99,6 +105,7 @@ func main() {
 		Meta:         metaClient,
 		WhatsAppHook: hook,
 		Actions:      actStore,
+		Activity:     actLog,
 		ActionExec:   execMap,
 		AppToken:     os.Getenv("FRITZ_APP_TOKEN"),
 	})))

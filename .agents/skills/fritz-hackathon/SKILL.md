@@ -54,12 +54,27 @@ photo" on its own; no "you seem stressed" features.
 4. `find_object` ("where are my keys?") and `look`
 5. Memory + web dashboard + Muse Wonder consolidation
 6. Proactive greeting on arrival
-7. Android companion: push alerts + Approve/Decline when away
-   (`fritz-mobile`, `fritz-mobile-backend`); push-to-talk from the phone last
+7. Away mode over **WhatsApp** (decided Nov 1, replaces the Android app
+   for the demo): pending actions and urgent mail reach the user on
+   WhatsApp, a "yes" there approves (`fritz-integrations`). The Android
+   app (`fritz-mobile`) only if everything else is done.
 8. Anything else (Muse Image, social media, Glimmer) — only if 1–7 are solid
 
 Out of scope: `ios/`. Muse Gadgets is not an option — the Muse app isn't
 available in the Philippines; the Android app replaces it.
+
+## Plan to the deadline (set Nov 1)
+
+- Nov 1: email reply + send ✅, activity log ✅, start WhatsApp Business
+  setup (user; template approval takes time).
+- Nov 2: `find_object` + last-seen memory for keys/wallet/glasses,
+  proactive greeting on arrival.
+- Nov 3: WhatsApp away mode (pending action → WhatsApp), simple web
+  dashboard (memories + activity), README.
+- Nov 4: rehearse and record; submit with buffer before 9 PM ET.
+- Open decision: the impact story — (A) the builder's overnight
+  cross-timezone email, or (B) a companion for parents living alone,
+  connected to family abroad.
 
 ## Demo video (aim for 2–3 min)
 
@@ -70,8 +85,9 @@ available in the Philippines; the Android app replaces it.
    "send it" → happy eyes. Show the sent email.
 4. **Vision (25 s):** "Fritz, where are my keys?" Eyes turn to the keys.
 5. **Away (25 s):** walk off; eyes go to standby; an urgent email arrives;
-   the phone buzzes with Approve/Decline; tap Approve. Walk back: "Welcome
-   back — I sent your reply to Sarah."
+   Fritz messages you on WhatsApp ("Sarah asked if Thursday works — reply
+   yes?"); you answer "yes". Walk back: "Welcome back — I sent your reply
+   to Sarah."
 6. **Memory (20 s):** dashboard shows what Fritz learned; delete one live.
 7. **How it works (25 s):** architecture diagram labelled with each Meta
    model.

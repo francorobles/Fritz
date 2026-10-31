@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/francorobles/fritz/api/internal/meta"
 )
@@ -44,6 +45,9 @@ type Agent struct {
 	// OnTool, when set, is told about every call before it runs
 	// (console log, face "thinking").
 	OnTool func(name, args string)
+	// AfterTool, when set, gets every call's JSON result (it
+	// starts with {"error" on failure) — the activity log.
+	AfterTool func(name, args, result string, took time.Duration)
 }
 
 // Run answers one turn. messages is the full prompt (system,
@@ -91,7 +95,11 @@ func (a *Agent) Run(ctx context.Context, messages []meta.Message, emit func(delt
 		}
 		msgs = append(msgs, meta.Message{Role: "assistant", Content: res.Text, ToolCalls: res.ToolCalls})
 		for _, call := range res.ToolCalls {
+			started := time.Now()
 			result := a.call(ctx, call)
+			if a.AfterTool != nil {
+				a.AfterTool(call.Function.Name, call.Function.Arguments, result, time.Since(started))
+			}
 			if round == maxRounds-1 {
 				// Last allowed round: the next reply must be the
 				// answer. The tools stay listed (the history

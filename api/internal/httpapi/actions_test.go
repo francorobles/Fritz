@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/francorobles/fritz/api/internal/actions"
+	"github.com/francorobles/fritz/api/internal/activity"
 	"github.com/francorobles/fritz/api/internal/agent"
 )
 
@@ -87,5 +88,44 @@ func TestActionsEndpoints(t *testing.T) {
 	}
 	if executed != 1 {
 		t.Errorf("executed = %d, want still 1", executed)
+	}
+}
+
+// TestActivityRecordsPhoneApproval: approving from the phone lands
+// in /activity, which the dashboard reads.
+func TestActivityRecordsPhoneApproval(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "fritz.db")
+	store, err := actions.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	log, err := activity.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { log.Close() })
+	exec := map[string]agent.Executor{
+		"email_reply": func(context.Context, json.RawMessage) (string, error) { return "Sent. I replied to Sarah.", nil },
+	}
+	h := NewRouter(Deps{Actions: store, ActionExec: exec, AppToken: "tok", Activity: log})
+
+	if rec := actionsCall(t, NewRouter(Deps{}), "GET", "/activity", ""); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("no log: status %d, want 503", rec.Code)
+	}
+	a, err := store.Create("email_reply", `reply to Sarah: "Thursday works"?`, `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := actionsCall(t, h, "POST", "/actions/"+a.ID+"/approve", "tok"); rec.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", rec.Code, rec.Body)
+	}
+	rec := actionsCall(t, h, "GET", "/activity", "")
+	var entries []activity.Entry
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil || len(entries) != 1 {
+		t.Fatalf("activity = %s (%v)", rec.Body, err)
+	}
+	if e := entries[0]; e.Source != "app" || e.Name != "email_reply" || !e.OK || !strings.Contains(e.Detail, "replied to Sarah") {
+		t.Errorf("entry = %+v", e)
 	}
 }

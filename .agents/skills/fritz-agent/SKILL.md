@@ -18,10 +18,13 @@ Built so far: `agent.Agent.Run` streams Spark's reply (text is spoken
 as it arrives, across tool rounds), runs tool calls, and returns tool
 errors to the model as `{"error": ...}` instead of failing the turn.
 `meta.Client.ChatStreamTools` assembles streamed `tool_calls` deltas.
-`voicecheck` wires in `MailTools(reg.Mailboxes)` from
-`integrations.json`; no connected mailbox means no tools offered.
+`voicecheck` wires in the tools from `integrations.json`; a provider
+that isn't connected means its tools aren't offered.
 Add a tool: a `Tool{Name, Description, Parameters, Run}` with strict
-argument decoding (`decodeArgs`) and a fake-backed test.
+argument decoding (`decodeArgs`) and a fake-backed test. A gated
+(world-changing) tool also needs an executor registered in
+`agent.Executors(reg)` — voice, WhatsApp and the phone all share that
+one map.
 
 ## Loop
 
@@ -40,6 +43,11 @@ turn text (from voice or web)
 - Keep the last ~10 turns as history; older context comes from memory.
 - Every tool call and result goes to an activity log (SQLite) that the web
   dashboard shows. This is the "what did Fritz do" view in the demo.
+  Built: `api/internal/activity` (table `activity` in the shared db),
+  fed by `Agent.AfterTool` (tool calls) and `Confirmer.Activity`/the
+  `/actions` handlers (confirmed, declined, failed actions); served at
+  `GET /activity?limit=`. Entries keep a ≤300-char detail, never full
+  email bodies.
 - Ask the model to end its reply with a face hint so the face matches the
   words: prefer a structured `set_face(emotion)` tool over parsing text.
 
@@ -60,10 +68,9 @@ turn text (from voice or web)
 |---|---|---|
 | `email_search(query, max)` | agent/mail.go | Built. All connected mailboxes merged newest-first; summaries only (from, subject, date, unread, snippet, account + id) |
 | `email_read(account, id)` | agent/mail.go | Built. Full body, truncated to 4k chars |
-| `gmail_draft_reply(id, body)` | integrations | Creates a draft; returns `draft_id` |
-| `gmail_send_draft(draft_id)` | integrations | **Needs confirmation** |
-| `calendar_list(from, to)` | integrations | |
-| `calendar_create(title, start, end)` | integrations | **Needs confirmation** |
+| `email_reply(account, id, body)` | agent/reply.go | Built. **Needs confirmation**: summary names the recipient and quotes the body; sends in-thread on yes (Gmail only — `integrations.MailReplier`) |
+| `calendar_list(from, to)` | agent/calendar.go | Built |
+| `calendar_create(title, start, end)` | agent/calendar.go | Built. **Needs confirmation** |
 | `look(question)` | vision | Camera frame + Muse Spark |
 | `find_object(name)` | vision | SAM 3.1; eyes turn to it |
 | `set_face(emotion)` | face | |

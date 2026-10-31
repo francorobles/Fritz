@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/actions"
+	"github.com/francorobles/fritz/api/internal/activity"
 	"github.com/francorobles/fritz/api/internal/agent"
 	"github.com/francorobles/fritz/api/internal/face"
 	"github.com/francorobles/fritz/api/internal/integrations"
@@ -90,6 +91,16 @@ func main() {
 		actStore = nil
 	} else {
 		defer actStore.Close()
+	}
+	// Activity log: every tool call and confirmed action, for the
+	// dashboard's "what did Fritz do" view. Optional — a nil log
+	// records nothing.
+	actLog, logErr := activity.Open(dbPath)
+	if logErr != nil {
+		fmt.Println("activity: log unavailable:", logErr)
+		actLog = nil
+	} else {
+		defer actLog.Close()
 	}
 	if snap, snapErr := store.SnapshotText(30); snapErr == nil && snap != "" {
 		fmt.Printf("memory: recalling memories and recent conversation (%s)\n", dbPath)
@@ -175,6 +186,9 @@ func main() {
 			fmt.Printf("tools: %-9s %-8s %s\n", st.Name, state, st.Detail)
 		}
 		tools = agent.MailTools(reg.Mailboxes)
+		// Replies are gated like calendar_create: the tool files
+		// a pending action, the confirmer sends after a yes.
+		tools = append(tools, agent.EmailReplyTool(reg.Mailboxes, actStore)...)
 		// Only offer calendar tools when the client actually
 		// built — a nil *Calendar wrapped in an interface is
 		// not nil, and offering the tool then panics on use.
@@ -187,12 +201,10 @@ func main() {
 		} else if icfg.Calendar.Enabled {
 			fmt.Println("tools: calendar enabled but the client did not build — no calendar tools (see the status line above)")
 		}
-		if reg.Calendar != nil && actStore != nil {
-			confirmer = &agent.Confirmer{
-				Store: actStore,
-				Exec: map[string]agent.Executor{
-					"calendar_create": agent.CalendarCreateExecutor(reg.Calendar),
-				},
+		if actStore != nil {
+			exec := agent.Executors(reg)
+			if len(exec) > 0 {
+				confirmer = &agent.Confirmer{Store: actStore, Exec: exec, Activity: actLog, Source: "voice"}
 			}
 		}
 	}
@@ -471,6 +483,12 @@ func main() {
 			if faceClient != nil {
 				faceClient.Emotion("thinking")
 			}
+		}, AfterTool: func(name, args, result string, took time.Duration) {
+			_ = actLog.Add(activity.Entry{
+				Source: "voice", Kind: activity.KindTool, Name: name,
+				Detail: args + " → " + result,
+				OK:     !strings.HasPrefix(result, `{"error"`),
+			})
 		}}
 		// FirstClause (speak "Sure," on its own) starts a little
 		// sooner but stalls mid-sentence while the rest streams in,

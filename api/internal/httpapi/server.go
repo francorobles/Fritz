@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/francorobles/fritz/api/internal/actions"
+	"github.com/francorobles/fritz/api/internal/activity"
 	"github.com/francorobles/fritz/api/internal/agent"
 	"github.com/francorobles/fritz/api/internal/memory"
 	"github.com/francorobles/fritz/api/internal/meta"
@@ -29,11 +30,12 @@ type Deps struct {
 	Actions      *actions.Store
 	ActionExec   map[string]agent.Executor
 	AppToken     string
+	Activity     *activity.Log // nil: GET /activity answers 503
 }
 
 // NewRouter returns the API's HTTP handler.
 func NewRouter(d Deps) http.Handler {
-	h := &handlers{store: d.Store, meta: d.Meta}
+	h := &handlers{store: d.Store, meta: d.Meta, activity: d.Activity}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
@@ -47,6 +49,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Delete("/{id}", h.deleteMemory)
 	})
 	r.With(middleware.Timeout(30*time.Second)).Get("/turns", h.listTurns)
+	r.With(middleware.Timeout(30*time.Second)).Get("/activity", h.listActivity)
 	r.With(middleware.Timeout(30*time.Second)).Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "fritz-api"})
 	})
@@ -66,7 +69,7 @@ func NewRouter(d Deps) http.Handler {
 	// Phone approvals (fritz-mobile-backend): the same pending
 	// actions the desk confirms by voice, behind the app token.
 	if d.Actions != nil && d.AppToken != "" {
-		ah := &actionsHandlers{store: d.Actions, exec: d.ActionExec}
+		ah := &actionsHandlers{store: d.Actions, exec: d.ActionExec, activity: d.Activity}
 		r.Route("/actions", func(r chi.Router) {
 			r.Use(appAuth(d.AppToken))
 			r.Use(middleware.Timeout(2 * time.Minute))
@@ -79,8 +82,25 @@ func NewRouter(d Deps) http.Handler {
 }
 
 type handlers struct {
-	store *memory.Store
-	meta  *meta.Client
+	store    *memory.Store
+	meta     *meta.Client
+	activity *activity.Log
+}
+
+// listActivity serves the dashboard's "what did Fritz do" view,
+// newest first (?limit=, default 100).
+func (h *handlers) listActivity(w http.ResponseWriter, r *http.Request) {
+	if h.activity == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("activity log unavailable"))
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	entries, err := h.activity.Recent(limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, entries)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

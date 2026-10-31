@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/francorobles/fritz/api/internal/actions"
+	"github.com/francorobles/fritz/api/internal/activity"
 )
 
 // Executor runs one confirmed pending action and returns the
@@ -21,6 +22,15 @@ type Executor func(ctx context.Context, payload json.RawMessage) (string, error)
 type Confirmer struct {
 	Store *actions.Store
 	Exec  map[string]Executor
+
+	// Activity (optional) records each confirmed, declined, or
+	// failed action; Source names the channel (voice, whatsapp).
+	Activity *activity.Log
+	Source   string
+}
+
+func (c *Confirmer) logAction(a actions.Action, detail string, ok bool) {
+	_ = c.Activity.Add(activity.Entry{Source: c.Source, Kind: activity.KindAction, Name: a.Kind, Detail: detail, OK: ok})
 }
 
 // affirmatives are the whole-utterance yeses that confirm a
@@ -99,7 +109,9 @@ func (c *Confirmer) HandleTurn(ctx context.Context, text string) (handled bool, 
 		return false, ""
 	}
 	if !IsAffirmative(text) {
-		_ = c.Store.Decline(pending.ID)
+		if c.Store.Decline(pending.ID) == nil {
+			c.logAction(pending, "declined: "+pending.Summary, true)
+		}
 		return false, ""
 	}
 	action, err := c.Store.Approve(pending.ID)
@@ -112,13 +124,16 @@ func (c *Confirmer) HandleTurn(ctx context.Context, text string) (handled bool, 
 	exec := c.Exec[action.Kind]
 	if exec == nil {
 		_ = c.Store.Finish(action.ID, "no executor for "+action.Kind, true)
+		c.logAction(action, "no executor: "+action.Summary, false)
 		return true, "Sorry — I can't run that anymore."
 	}
 	result, err := exec(ctx, json.RawMessage(action.Payload))
 	if err != nil {
 		_ = c.Store.Finish(action.ID, err.Error(), true)
+		c.logAction(action, "failed: "+action.Summary+" — "+err.Error(), false)
 		return true, "Sorry, that didn't work: " + err.Error()
 	}
 	_ = c.Store.Finish(action.ID, result, false)
+	c.logAction(action, "confirmed: "+action.Summary+" — "+result, true)
 	return true, result
 }

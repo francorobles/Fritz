@@ -47,10 +47,15 @@ put client or token files in the repo; add `*.token.json`,
 - Read: `Format("full")`, walk MIME parts, prefer `text/plain`, decode
   base64url, strip quoted replies (lines after `On ... wrote:`) before sending
   to the model.
-- Draft reply: build an RFC 2822 message with `In-Reply-To`, `References`,
-  `Subject: Re: ...`, same `ThreadId`; `Users.Drafts.Create`.
-- Send: `Users.Drafts.Send` — only after the confirmation flow in
-  `fritz-agent`.
+- Reply (built, `integrations/reply.go`, `MailReplier`): `PrepareReply`
+  reads From/Reply-To/Subject/Message-ID/References (so the confirmation
+  names the recipient); `SendReply` builds an RFC 2822 plain-text message
+  with `In-Reply-To`, `References`, one `Re:`, and sends it with
+  `Users.Messages.Send` in the same `ThreadId`. No drafts: a declined
+  draft would linger in the user's Gmail. Called **only** from the
+  confirmed `email_reply` executor. CR/LF are stripped from every header
+  value (they come from someone else's email and from the model —
+  header injection otherwise). `gmail.compose` covers sending.
 - "Important" for proactive alerts: unread AND (from a person in memory with
   kind `person`, OR Gmail's `IMPORTANT` label). Keep it simple.
 
@@ -65,6 +70,43 @@ put client or token files in the repo; add `*.token.json`,
 Use the developer's real account only with mail they're comfortable showing
 on screen, or a dedicated demo Gmail account seeded with realistic threads.
 Never fake API responses in the demo without saying so.
+
+## WhatsApp (Cloud API) — Fritz's link when the user is away
+
+Code: `integrations/whatsapp.go` (send text/template),
+`whatsapp_webhook.go` (inbound, mounted by `cmd/server` at
+`/webhooks/whatsapp`), chat replies via `internal/chat` with the same
+Go-checked `Confirmer` as voice (a WhatsApp "yes" approves the pending
+action). Replaces the Android app for the demo's "away" scene; WhatsApp
+is also a Meta product, which counts for the judging.
+
+Setup (by the user, once):
+
+1. developers.facebook.com → Create app → use case "Connect with customers
+   through WhatsApp" (needs a Meta Business portfolio).
+2. WhatsApp → API Setup: note the test number's **Phone number ID**; add
+   the user's own number as a recipient (verify the code).
+3. Permanent token: Business Settings → System users → add (Admin) →
+   assign the app → generate a token with `whatsapp_business_messaging` +
+   `whatsapp_business_management`. Temporary tokens die in 24 h.
+4. App secret: App settings → Basic. Verify token: any random string
+   (`openssl rand -hex 16`).
+5. Secrets go in `/etc/fritz/fritz.env` (`FRITZ_WA_TOKEN`,
+   `FRITZ_WA_APP_SECRET`, `FRITZ_WA_VERIFY_TOKEN`); `integrations.json`
+   only names them:
+   `"whatsapp": {"enabled": true, "phone_number_id": "...", "token_env":
+   "FRITZ_WA_TOKEN", "app_secret_env": "FRITZ_WA_APP_SECRET",
+   "verify_token_env": "FRITZ_WA_VERIFY_TOKEN", "allow": ["63917..."],
+   "alert_template": "hello_world"}`.
+6. Test sending: `go run ./cmd/mailcheck -whatsapp`.
+7. Inbound: run `cmd/server` on the Pi, expose it with
+   `sudo tailscale funnel --bg 8080`, then in the app's WhatsApp →
+   Configuration set the callback to `https://<pi>.<tailnet>.ts.net/webhooks/whatsapp`
+   with the verify token, and subscribe to `messages`.
+8. Alerts outside the 24 h window need an approved template: submit a
+   Utility template early (approval can take hours), e.g. `fritz_alert`,
+   body `Fritz needs your OK: {{1}} Reply YES to approve.` Until it's
+   approved, message Fritz first so free-form replies are allowed.
 
 ## Social media — deferred
 
