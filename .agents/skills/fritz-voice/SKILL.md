@@ -45,6 +45,18 @@ Hardware details (device names, levels, Bluetooth reconnects) are in
 - A turn is done on `speechComplete` for its `turnId`.
 - Reconnect before 60 min, and on `1013`/errors with exponential backoff
   (1 s → 30 s).
+- Local endpointing (`FRITZ_STALL_MS`) finishes a turn when partials stop
+  changing, so it can fire at a mid-sentence pause. Two rules keep that from
+  splitting one request into two (`pendingTurn` in `cmd/voicecheck`):
+  - Mute the mic when Fritz makes its **first sound** (ack or sentence), not
+    when the request is sent; the mic stays open while Fritz thinks.
+  - **Take back** the reply if new words arrive before the first sound or
+    tool call: cancel it, keep the start of the sentence, and answer the
+    joined turn once (`voice.JoinTurns`). Too late for that (already
+    talking): ≤3 trailing words of the same utterance are dropped as the
+    tail of the request being answered, and a longer tail is answered on its
+    own (`voice.Continuation`). The log shows `[still talking — taking back
+    the reply to …]`.
 
 ## When to listen
 

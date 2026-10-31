@@ -283,11 +283,14 @@ func main() {
 		}
 	}
 	var replyMu sync.Mutex
+	inflight := &pendingTurn{}
 	// proactive turns (the arrival greeting) come from Fritz's own
 	// senses, not the user: request is an instruction to the model,
 	// the confirmer is skipped (it isn't the user's answer), and
-	// only Fritz's line is kept in the conversation.
-	respond := func(request string, heardAt time.Time, proactive bool) {
+	// only Fritz's line is kept in the conversation. heard is the
+	// raw transcript ("" for proactive turns), kept so the reply
+	// can be taken back if the user turns out to be mid-sentence.
+	respond := func(request, heard string, heardAt time.Time, proactive bool) {
 		replyMu.Lock()
 		defer replyMu.Unlock()
 		// The follow-up window must open when speaking FINISHES:
@@ -307,6 +310,17 @@ func main() {
 				preset = reply
 			}
 		}
+
+		// Until Fritz makes a sound or runs a tool, the reply can be
+		// taken back (pendingTurn): more words from the user mean
+		// local endpointing cut them off at a pause. A confirmed
+		// action has already run, so it can't be.
+		turnCtx, cancelTurn := context.WithCancel(ctx)
+		defer cancelTurn()
+		if heard != "" && preset == "" {
+			inflight.open(heard, cancelTurn)
+		}
+		defer inflight.close()
 
 		if faceClient != nil {
 			faceClient.Emotion("thinking")
@@ -422,6 +436,28 @@ func main() {
 			}
 		}
 
+		// talk runs right before Fritz's first sound (ack or
+		// sentence): it closes the take-back window and mutes the
+		// mic. Muting from here rather than from the request keeps
+		// the mic open while Fritz thinks, so the rest of a paused
+		// sentence is still heard instead of replaced by silence.
+		// False means the reply was taken back: stay quiet.
+		var talkOnce sync.Once
+		var talked atomic.Bool
+		talk := func() bool {
+			if !inflight.commit(turnCtx) {
+				return false
+			}
+			talkOnce.Do(func() {
+				talked.Store(true)
+				client.Muted.Store(true)
+				if faceClient != nil {
+					faceClient.Speaking(true)
+				}
+			})
+			return true
+		}
+
 		// If Spark's first sentence is slow, say a short pre-rendered
 		// "Ok!" so the user hears Fritz respond right away. The
 		// lock makes "ack" and "first sentence" mutually ordered: the
@@ -432,7 +468,7 @@ func main() {
 			ack := time.AfterFunc(ackAfter, func() {
 				spokeMu.Lock()
 				defer spokeMu.Unlock()
-				if !spoke {
+				if !spoke && talk() {
 					engine.PlayPCM(acks[rand.IntN(len(acks))])
 					fmt.Println("[ack]")
 				}
@@ -463,7 +499,7 @@ func main() {
 				}
 			}
 			sentence = voice.Speakable(sentence)
-			if sentence == "" {
+			if sentence == "" || !talk() {
 				return
 			}
 			spokeMu.Lock()
@@ -477,10 +513,6 @@ func main() {
 			}
 		}
 		if speaker != nil {
-			client.Muted.Store(true)
-			if faceClient != nil {
-				faceClient.Speaking(true)
-			}
 			defer func() {
 				if speaker != nil {
 					if err := speaker.Close(); err != nil {
@@ -488,6 +520,9 @@ func main() {
 					} else if !firstSpokenAt.IsZero() {
 						fmt.Printf("[spoken in %s]\n", time.Since(firstSpokenAt).Round(time.Millisecond))
 					}
+				}
+				if !talked.Load() {
+					return // never made a sound: nothing to unmute
 				}
 				printTiming(heardAt, now, firstSpokenAt, time.Unix(0, firstAudio.Load()))
 				// Bluetooth tail: keep muting briefly after
@@ -503,10 +538,23 @@ func main() {
 			}()
 		}
 
+		// FirstClause (speak "Sure," on its own) starts a little
+		// sooner but stalls mid-sentence while the rest streams in,
+		// which sounds choppy; off unless FRITZ_FIRST_CLAUSE=1.
+		splitter := voice.Splitter{FirstClause: os.Getenv("FRITZ_FIRST_CLAUSE") == "1"}
 		// The agent streams Spark's reply like a plain chat, but can
 		// stop mid-turn to run a tool and continue with its result.
 		brain := &agent.Agent{Chat: chat, Tools: tools, OnTool: func(name, args string) {
 			fmt.Printf("[tool] %s %s\n", name, args)
+			// A tool is a decision on the request as heard: past
+			// this point the reply is no longer taken back.
+			inflight.commit(turnCtx)
+			// The lead-in ("Checking now.") is still in the
+			// splitter waiting for more text; speak it before the
+			// tool runs, or it comes out after, seconds late.
+			if tail := splitter.Flush(); tail != "" {
+				say(tail)
+			}
 			usedTool = true
 			if faceClient != nil {
 				faceClient.Emotion("thinking")
@@ -518,10 +566,6 @@ func main() {
 				OK:     !strings.HasPrefix(result, `{"error"`),
 			})
 		}}
-		// FirstClause (speak "Sure," on its own) starts a little
-		// sooner but stalls mid-sentence while the rest streams in,
-		// which sounds choppy; off unless FRITZ_FIRST_CLAUSE=1.
-		splitter := voice.Splitter{FirstClause: os.Getenv("FRITZ_FIRST_CLAUSE") == "1"}
 		var reply strings.Builder
 		var streamErr error
 		if preset != "" {
@@ -533,7 +577,7 @@ func main() {
 			// The returned full text duplicates what the
 			// callback accumulated; the stream error is what
 			// matters here.
-			_, streamErr = brain.Run(ctx, messages, func(delta string) {
+			_, streamErr = brain.Run(turnCtx, messages, func(delta string) {
 				reply.WriteString(delta)
 				for _, sentence := range splitter.Feed(delta) {
 					say(sentence)
@@ -542,6 +586,16 @@ func main() {
 			if tail := splitter.Flush(); tail != "" {
 				say(tail)
 			}
+		}
+		if turnCtx.Err() != nil && ctx.Err() == nil && !talked.Load() {
+			// Taken back: the user kept talking. Nothing was said
+			// and nothing is remembered; the whole sentence comes
+			// back as one turn (handleTurn merges it).
+			fmt.Println("[reply dropped — waiting for the rest of the sentence]")
+			if faceClient != nil {
+				faceClient.Emotion("focused")
+			}
+			return
 		}
 		text := strings.TrimSpace(reply.String())
 		if streamErr != nil && text == "" {
@@ -613,7 +667,7 @@ func main() {
 				replyMu.Unlock()
 				lastGreet = now
 				fmt.Println("[greeting: user arrived]")
-				respond(arrivalPrompt(leftAt, now, actLog), time.Time{}, true)
+				respond(arrivalPrompt(leftAt, now, actLog), "", time.Time{}, true)
 			}
 		}()
 	}
@@ -627,17 +681,18 @@ func main() {
 	var turnMu sync.Mutex
 	lastHandled := ""
 	lastHandledAt := time.Time{}
-	claimTurn := func(text string) bool {
+	claimTurn := func(text string) (prev string, prevAt time.Time, ok bool) {
 		turnMu.Lock()
 		defer turnMu.Unlock()
 		if text == "" {
-			return false
+			return "", time.Time{}, false
 		}
 		if text == lastHandled && time.Since(lastHandledAt) < 3*time.Second {
-			return false
+			return "", time.Time{}, false
 		}
+		prev, prevAt = lastHandled, lastHandledAt
 		lastHandled, lastHandledAt = text, time.Now()
-		return true
+		return prev, prevAt, true
 	}
 	neverHandled := func() bool {
 		turnMu.Lock()
@@ -645,20 +700,43 @@ func main() {
 		return lastHandled == ""
 	}
 	handleTurn := func(text string) {
-		if !claimTurn(text) {
+		// A reply taken back for a pause gets its start back here.
+		text, merged := inflight.merge(text, time.Now())
+		prev, prevAt, ok := claimTurn(text)
+		if !ok {
 			return
 		}
 		fmt.Printf("[turn complete] %q\n", text)
+		var heardAt time.Time
+		if ns := lastHeard.Load(); ns != 0 {
+			heardAt = time.Unix(0, ns)
+		}
+		// The same utterance again, after its reply already began
+		// (too late to take back): a late restatement, or the words
+		// after the pause. A few trailing words ("…my email" +
+		// "Gmail") only finish the request being answered; a real
+		// second request (more words) is answered on its own.
+		if !merged && time.Since(prevAt) < continuationWindow {
+			if !voice.AddsWords(prev, text) && voice.WordCount(text) >= 4 {
+				fmt.Println(">> (ignored — repeat of the request already answered)")
+				return
+			}
+			if rest, cont := voice.Continuation(prev, text); cont {
+				if voice.WordCount(rest) <= 3 {
+					fmt.Printf(">> (ignored — %q only finishes the request already answered)\n", rest)
+					return
+				}
+				fmt.Printf(">> REQUEST (rest of the last one): %s\n", rest)
+				respond(rest, rest, heardAt, false)
+				return
+			}
+		}
 		if request, ok := tracker.Accept(text, time.Now()); ok {
 			if faceClient != nil {
 				faceClient.Blink()
 			}
 			fmt.Printf(">> REQUEST: %s\n", request)
-			var heardAt time.Time
-			if ns := lastHeard.Load(); ns != 0 {
-				heardAt = time.Unix(0, ns)
-			}
-			respond(request, heardAt, false) // speaks the reply; opens the follow-up window
+			respond(request, text, heardAt, false) // speaks the reply; opens the follow-up window
 		} else if voice.WakeMatch(text) {
 			fmt.Println(">> (wake phrase heard — next turn is the request)")
 			if faceClient != nil {
@@ -726,6 +804,14 @@ func main() {
 		if event.Type == "transcript" && event.Transcript != lastTranscript {
 			lastTranscript = event.Transcript
 			lastHeard.Store(time.Now().UnixNano())
+			// New words while Fritz is still thinking: the turn was
+			// endpointed at a pause, not at its end.
+			if heard, ok := inflight.takeBack(event.Transcript); ok {
+				fmt.Printf("[still talking — taking back the reply to %q]\n", heard)
+				if faceClient != nil {
+					faceClient.Emotion("focused")
+				}
+			}
 		}
 		if debug && event.Type != "audioProgress" {
 			// audioProgress fires constantly while audio streams; it
@@ -795,6 +881,88 @@ func looksVisual(request string) bool {
 
 // mouth is one reply's speech output: the always-on engine, or a
 // per-reply Piper pipeline (voice.Speaker) when the engine is off.
+// continuationWindow is how long after a request its restatement or
+// its trailing words still count as part of it, and how long a
+// taken-back turn waits for the rest of the sentence.
+const continuationWindow = 30 * time.Second
+
+// pendingTurn is the user turn whose reply can still be taken back:
+// from the request until Fritz first makes a sound (ack included)
+// or runs a tool. Local endpointing guesses where a turn ends from a
+// pause; when more words arrive in that window the guess was wrong,
+// so the reply is cancelled and the start of the sentence is kept
+// (carry) until the rest completes, then answered as one turn. Once
+// Fritz is talking the mic is muted, so the window closes there.
+// Safe for concurrent use: the event callback, the endpointing
+// watcher, and the reply goroutine all touch it.
+type pendingTurn struct {
+	mu      sync.Mutex
+	heard   string
+	cancel  context.CancelFunc
+	carry   string
+	carryAt time.Time
+}
+
+// open starts the window for a reply to heard.
+func (p *pendingTurn) open(heard string, cancel context.CancelFunc) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.heard, p.cancel = heard, cancel
+}
+
+// close ends the window (the reply finished).
+func (p *pendingTurn) close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.heard, p.cancel = "", nil
+}
+
+// commit ends the window because Fritz is about to make a sound or
+// act. False means the reply (ctx) was already taken back. Checking
+// ctx under the same lock takeBack cancels under keeps the two
+// ordered: never a sound from a reply that was taken back.
+func (p *pendingTurn) commit(ctx context.Context) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
+	p.heard, p.cancel = "", nil
+	return true
+}
+
+// takeBack cancels the open reply if transcript says more than the
+// turn it answers (a late restatement of the same words doesn't),
+// and returns that turn's text.
+func (p *pendingTurn) takeBack(transcript string) (heard string, ok bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cancel == nil || !voice.AddsWords(p.heard, transcript) {
+		return "", false
+	}
+	p.cancel()
+	heard = p.heard
+	p.carry, p.carryAt = heard, time.Now()
+	p.heard, p.cancel = "", nil
+	return heard, true
+}
+
+// merge puts a taken-back turn's words back in front of the turn
+// that completes it. merged reports whether it did.
+func (p *pendingTurn) merge(text string, now time.Time) (out string, merged bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	carry, at := p.carry, p.carryAt
+	if carry == "" || text == "" {
+		return text, false
+	}
+	p.carry = ""
+	if now.Sub(at) > continuationWindow {
+		return text, false
+	}
+	return voice.JoinTurns(carry, text), true
+}
+
 type mouth interface {
 	Say(sentence string) error
 	Close() error // waits until the reply has finished playing

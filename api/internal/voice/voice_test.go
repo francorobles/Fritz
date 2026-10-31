@@ -390,3 +390,58 @@ func TestTracker(t *testing.T) {
 		t.Error("expired follow-up window should require the wake phrase")
 	}
 }
+
+func TestContinuation(t *testing.T) {
+	cases := []struct {
+		prev, next, rest string
+		ok               bool
+	}{
+		// The log that motivated this: endpointed at a pause, then
+		// the server resent the whole utterance with one more word.
+		{"Hey Fritz can you check my email", "Hey Fritz, can you check my email Gmail.", "Gmail.", true},
+		{"hey fritz can you", "Hey Fritz can you check my calendar", "check my calendar", true},
+		{"Hey Fritz can you check my email", "Hey Fritz can you check my email", "", false},
+		{"Hey Fritz can you check my email", "Hey Fritz", "", false},
+		{"Hey Fritz can you check my email", "Gmail", "", false},
+		{"", "Gmail", "", false},
+	}
+	for _, c := range cases {
+		rest, ok := Continuation(c.prev, c.next)
+		if rest != c.rest || ok != c.ok {
+			t.Errorf("Continuation(%q, %q) = %q, %v; want %q, %v", c.prev, c.next, rest, ok, c.rest, c.ok)
+		}
+	}
+}
+
+func TestAddsWords(t *testing.T) {
+	prev := "Hey Fritz can you check my email"
+	adds := []string{"Hey Fritz can you check my email Gmail", "Gmail", "and my calendar"}
+	same := []string{"Hey Fritz can you check my email", "hey fritz, can you", "check my email.", "Fritz can you check", "", "..."}
+	for _, s := range adds {
+		if !AddsWords(prev, s) {
+			t.Errorf("AddsWords(%q) = false, want true", s)
+		}
+	}
+	for _, s := range same {
+		if AddsWords(prev, s) {
+			t.Errorf("AddsWords(%q) = true, want false", s)
+		}
+	}
+}
+
+func TestJoinTurns(t *testing.T) {
+	earlier := "Hey Fritz can you check my email"
+	cases := map[string]string{
+		"Hey Fritz can you check my email Gmail": "Hey Fritz can you check my email Gmail",
+		"Gmail":                                  "Hey Fritz can you check my email Gmail",
+		"Hey Fritz can you check my email":       "Hey Fritz can you check my email",
+	}
+	for later, want := range cases {
+		if got := JoinTurns(earlier, later); got != want {
+			t.Errorf("JoinTurns(%q) = %q, want %q", later, got, want)
+		}
+	}
+	if WordCount("check my email Gmail.") != 4 {
+		t.Error("WordCount miscounted")
+	}
+}

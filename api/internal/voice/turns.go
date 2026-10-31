@@ -142,3 +142,76 @@ func StallWait(text string, base time.Duration) time.Duration {
 	}
 	return wait
 }
+
+// Local endpointing can finish a turn while the user is only
+// pausing ("…check my email" [pause] "Gmail"). The helpers below
+// recognize the rest of that same utterance when it arrives, so
+// it extends the request instead of becoming a second one.
+
+// turnWords splits text into words, keeping each original spelling
+// next to a normalized form (lowercase, letters/digits/apostrophes
+// only) for comparison. Punctuation-only fields are dropped.
+func turnWords(text string) (orig, norm []string) {
+	for _, f := range strings.Fields(text) {
+		n := strings.Map(func(r rune) rune {
+			switch {
+			case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '\'':
+				return r
+			case r >= 'A' && r <= 'Z':
+				return r + ('a' - 'A')
+			}
+			return -1
+		}, f)
+		if n != "" {
+			orig = append(orig, f)
+			norm = append(norm, n)
+		}
+	}
+	return orig, norm
+}
+
+// Continuation reports whether next is prev with more words after
+// it — the same utterance heard again, longer — and returns the
+// added words. Case and punctuation are ignored.
+func Continuation(prev, next string) (rest string, ok bool) {
+	_, p := turnWords(prev)
+	o, n := turnWords(next)
+	if len(p) == 0 || len(n) <= len(p) {
+		return "", false
+	}
+	for i := range p {
+		if p[i] != n[i] {
+			return "", false
+		}
+	}
+	return strings.Join(o[len(p):], " "), true
+}
+
+// AddsWords reports whether a transcript says something beyond
+// prev. A late restatement of prev or a piece of it ("Fritz can
+// you") adds nothing; a longer version or unrelated words do.
+func AddsWords(prev, next string) bool {
+	_, p := turnWords(prev)
+	_, n := turnWords(next)
+	if len(n) == 0 {
+		return false
+	}
+	return !strings.Contains(" "+strings.Join(p, " ")+" ", " "+strings.Join(n, " ")+" ")
+}
+
+// JoinTurns rebuilds an utterance that was cut at a pause: earlier
+// is what was heard before the cut, later what completed after it.
+// The server often resends the whole utterance (later already
+// contains earlier); otherwise later is just the new words.
+func JoinTurns(earlier, later string) string {
+	if !AddsWords(later, earlier) {
+		return later
+	}
+	return strings.TrimSpace(earlier + " " + later)
+}
+
+// WordCount counts words as Continuation does.
+func WordCount(text string) int {
+	_, n := turnWords(text)
+	return len(n)
+}

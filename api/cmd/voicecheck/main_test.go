@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,5 +64,65 @@ func TestArrivalPrompt(t *testing.T) {
 	}
 	if first := arrivalPrompt(time.Time{}, time.Now(), nil); strings.Contains(first, "away") {
 		t.Errorf("first arrival should not mention time away: %q", first)
+	}
+}
+
+// The log that motivated pendingTurn: "Hey Fritz can you check my
+// email" was endpointed at a pause, then "…Gmail" arrived while
+// Fritz was still thinking. The reply must be taken back and the
+// whole sentence answered once.
+func TestPendingTurnTakeBack(t *testing.T) {
+	var p pendingTurn
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	first := "Hey Fritz can you check my email"
+	p.open(first, cancel)
+
+	// A late restatement of the same words is not new speech.
+	if _, ok := p.takeBack("Hey Fritz can you"); ok {
+		t.Fatal("restatement took the reply back")
+	}
+	heard, ok := p.takeBack("Hey Fritz can you check my email Gmail")
+	if !ok || heard != first {
+		t.Fatalf("takeBack = %q, %v; want %q, true", heard, ok, first)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("reply context not cancelled")
+	}
+	if p.commit(ctx) {
+		t.Fatal("commit allowed a sound from a taken-back reply")
+	}
+	now := time.Now()
+	if got, merged := p.merge("Gmail", now); !merged || got != first+" Gmail" {
+		t.Fatalf("merge = %q, %v", got, merged)
+	}
+	// The carry is used once.
+	if got, merged := p.merge("thanks", now); merged || got != "thanks" {
+		t.Fatalf("second merge = %q, %v", got, merged)
+	}
+}
+
+func TestPendingTurnClosesWhenTalking(t *testing.T) {
+	var p pendingTurn
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p.open("Hey Fritz what time is it", cancel)
+	if !p.commit(ctx) {
+		t.Fatal("commit refused a live reply")
+	}
+	// Once Fritz is talking, more words never cancel the reply.
+	if _, ok := p.takeBack("Hey Fritz what time is it in Tokyo"); ok || ctx.Err() != nil {
+		t.Fatal("reply taken back after Fritz started talking")
+	}
+}
+
+func TestPendingTurnCarryExpires(t *testing.T) {
+	var p pendingTurn
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p.open("Hey Fritz check my", cancel)
+	p.takeBack("Hey Fritz check my calendar")
+	if got, merged := p.merge("calendar", time.Now().Add(continuationWindow+time.Second)); merged || got != "calendar" {
+		t.Fatalf("stale carry merged: %q", got)
 	}
 }
