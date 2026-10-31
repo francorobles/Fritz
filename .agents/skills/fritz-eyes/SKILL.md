@@ -86,5 +86,14 @@ the agent.
 `angry` stays unused unless the user asks for it — an angry assistant demos
 badly.
 
+**No positive tilt except `scared`.** The left eye mirrors the right's
+tilt, so a positive `tilt_deg` lifts both inner ends — worried brows. On
+the TFT even 10° read as anxious (Thinking at 30° looked scared; Happy at
+10° looked sad). Happy uses the `smile` cut instead (a black cheek oval
+hides the lower part of each eye → ∩ ∩); Thinking uses asymmetry and an
+upward drift; Tired uses level, low lids. To preview every expression
+without the Pi, render them offscreen with `SDL_CreateSoftwareRenderer`
+and `SDL_SaveBMP` (a 20-line harness linking `src/eyes.cpp`).
+
 Keep this table and the Go code in sync: define the mapping once in
 `api/internal/face/states.go`.

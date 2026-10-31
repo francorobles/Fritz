@@ -23,6 +23,13 @@ constexpr int kEyeStripes = 13;
 //   gaze_*    resting look direction (Thinking looks up and to a side)
 //   right_open  right eye openness relative to the left (Skeptical: one
 //             eye squints, the other does not)
+//   smile     fraction of the eye height a black "cheek" arc hides from
+//             below, turning ovals into EVE's happy ∩ ∩ (0 = none)
+//
+// Keep tilt_deg <= 0 except for Scared. The left eye mirrors the tilt,
+// so a positive tilt lifts both inner ends: worried brows. On the TFT
+// even 10° read as anxious (Thinking at 30° looked scared, Happy at 10°
+// looked sad), so happiness comes from the smile cut, not a tilt.
 struct Shape {
     float half_width;
     float half_height;
@@ -33,10 +40,11 @@ struct Shape {
     float gaze_x;
     float gaze_y;
     float right_openness;
+    float smile = 0.0f;
 };
 
 Shape shape_for(Emotion emotion) {
-    //          hw      hh     open   tilt    dx      dy      gx      gy     r-open
+    //          hw      hh     open   tilt    dx      dy      gx      gy     r-open  smile
     switch (emotion) {
         case Emotion::Thinking:
             // No tilt: the mirrored tilt raises both inner ends, which
@@ -46,7 +54,7 @@ Shape shape_for(Emotion emotion) {
             // the gaze, so the eyes still roll up mid-conversation.
             return {0.160f, 0.092f, 0.88f, 0.0f, 0.250f, -0.034f, 0.045f, -0.032f, 0.78f};
         case Emotion::Surprised:
-            return {0.155f, 0.104f, 1.00f, 3.0f, 0.255f, -0.020f, 0.0f, -0.006f, 1.0f};
+            return {0.155f, 0.104f, 1.00f, 0.0f, 0.255f, -0.020f, 0.0f, -0.006f, 1.0f};
         case Emotion::Angry:
             return {0.164f, 0.070f, 0.72f, -18.0f, 0.258f, 0.004f, 0.0f, 0.004f, 1.0f};
         case Emotion::Skeptical:
@@ -56,9 +64,10 @@ Shape shape_for(Emotion emotion) {
         case Emotion::Scared:
             return {0.152f, 0.106f, 1.00f, 9.0f, 0.252f, -0.024f, 0.0f, -0.008f, 1.0f};
         case Emotion::Happy:
-            return {0.164f, 0.076f, 0.60f, 10.0f, 0.260f, 0.006f, 0.0f, -0.004f, 1.0f};
+            return {0.164f, 0.100f, 1.00f, 0.0f, 0.255f, -0.004f, 0.0f, -0.004f, 1.0f, 0.62f};
         case Emotion::Tired:
-            return {0.162f, 0.078f, 0.38f, 11.0f, 0.258f, 0.024f, 0.0f, 0.012f, 1.0f};
+            // Heavy level lids: sleepy, not sad.
+            return {0.162f, 0.078f, 0.40f, 0.0f, 0.258f, 0.024f, 0.0f, 0.012f, 1.0f};
         case Emotion::Normal:
         default:
             // Calm, level blue ovals with horizontal scanlines. Keep the
@@ -417,6 +426,23 @@ void Eyes::draw(SDL_Renderer* renderer, int width, int height) const {
     }
     if (half_h_right >= 2.0f) {
         draw_eye(renderer, cx + dx, cy, half_w, half_h_right, shape.tilt_deg, kEyeColor);
+    }
+
+    // Smile: a wide background-colored oval rising from below hides the
+    // lower part of each eye (core and glow), leaving an upward arc.
+    // It scales with the eye's height, so blinks and the speaking pulse
+    // still read. Smiling shapes have no tilt, so no rotation here.
+    if (shape.smile > 0.0f) {
+        const SDL_Color cheek{0, 0, 0, SDL_ALPHA_OPAQUE};  // app.cpp clears to black
+        const float cut[] = {half_h_left, half_h_right};
+        const float eye_x[] = {cx - dx, cx + dx};
+        for (int i = 0; i < 2; ++i) {
+            const float h = cut[i];
+            const float cheek_h = h * 1.6f;
+            const float top = cy + h - shape.smile * 2.0f * h;
+            draw_oval(renderer, eye_x[i], top + cheek_h, half_w * 1.02f, cheek_h,
+                      0.0f, cheek, 2.0f);
+        }
     }
 }
 
