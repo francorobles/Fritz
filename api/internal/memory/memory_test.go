@@ -249,3 +249,32 @@ func TestSightingsUpsert(t *testing.T) {
 		t.Errorf("sighting = %+v", got[0])
 	}
 }
+
+func TestStateAndAlerted(t *testing.T) {
+	st := newStore(t)
+	if _, _, ok, err := st.State("sentry"); ok || err != nil {
+		t.Fatalf("unset key: ok=%v err=%v", ok, err)
+	}
+	if err := st.SetState("sentry", "on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetState("sentry", "off"); err != nil {
+		t.Fatal(err)
+	}
+	v, at, ok, err := st.State("sentry")
+	if v != "off" || !ok || err != nil || time.Since(at) > time.Minute {
+		t.Fatalf("State = %q %v %v %v", v, at, ok, err)
+	}
+	if seen, _ := st.Alerted("mail:gmail:1"); seen {
+		t.Fatal("unmarked key reported as alerted")
+	}
+	if added, err := st.MarkAlerted("mail:gmail:1", "mail", "Starlink"); !added || err != nil {
+		t.Fatalf("first mark: %v %v", added, err)
+	}
+	if added, _ := st.MarkAlerted("mail:gmail:1", "mail", "Starlink"); added {
+		t.Fatal("second mark of the same key must not count as new")
+	}
+	if seen, _ := st.Alerted("mail:gmail:1"); !seen {
+		t.Fatal("marked key not reported")
+	}
+}

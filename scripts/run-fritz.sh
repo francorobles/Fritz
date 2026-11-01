@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # Restart Fritz on the Pi in one go: stop any running voice/vision
 # loop and stray face instances, rebuild and reinstall the face if
-# its code changed, restart fritz-face (the eyes), then run the voice
-# loop (voicecheck: voice + memory + eyes following you) in the
-# foreground. Ctrl-C stops the voice loop; the eyes keep running.
+# its code changed, restart fritz-face (the eyes), start the API server
+# in the background (WhatsApp replies, phone app, dashboard), then run
+# the voice loop (voicecheck: voice + memory + eyes following you) in
+# the foreground. Ctrl-C stops the voice loop; the eyes and the server
+# keep running.
 #
 # Run as the desktop login user (not with sudo), from anywhere:
 #   ~/Fritz/scripts/run-fritz.sh            # rebuild if needed, restart, talk
 #   ~/Fritz/scripts/run-fritz.sh --pull     # git pull first
 #   ~/Fritz/scripts/run-fritz.sh --no-build # just restart, skip the builds
+#   ~/Fritz/scripts/run-fritz.sh --no-server # don't (re)start the API server
 # Extra arguments after `--` go to voicecheck.
+# Server log: ~/.cache/fritz/server.log
 
 set -euo pipefail
 
@@ -17,12 +21,14 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 env_file="${FRITZ_ENV_FILE:-/etc/fritz/fritz.env}"
 pull=0
 build=1
+server=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --pull) pull=1 ;;
         --no-build) build=0 ;;
+        --no-server) server=0 ;;
         --) shift; break ;;
-        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
         *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
     shift
@@ -45,6 +51,7 @@ echo "== stopping old voice/vision loops and stray faces"
 pkill -x voicecheck 2>/dev/null || true
 pkill -x visioncheck 2>/dev/null || true
 pkill -x voicetest 2>/dev/null || true
+[ "$server" -eq 1 ] && { pkill -x fritz-server 2>/dev/null || true; }
 # Bounded: a face stuck in a render call ignores SIGTERM, and an
 # older unit without TimeoutStopSec would then wait 90 s here.
 if ! sudo timeout 10 systemctl stop fritz-face 2>/dev/null; then
@@ -98,9 +105,29 @@ set -a
 # shellcheck disable=SC1090
 . "$env_file"
 set +a
+# The voice loop and the server share one database: the sentry switch,
+# what was already alerted, and your WhatsApp replies meet there.
+export FRITZ_DB="${FRITZ_DB:-$repo/api/fritz.db}"
 if [ "$build" -eq 1 ] || [ ! -x bin/voicecheck ]; then
     echo "== building the voice loop"
     go build -o bin/voicecheck ./cmd/voicecheck
+fi
+
+# --- API server (background) -------------------------------------------------
+if [ "$server" -eq 1 ]; then
+    if [ "$build" -eq 1 ] || [ ! -x bin/fritz-server ]; then
+        echo "== building the API server"
+        go build -o bin/fritz-server ./cmd/server
+    fi
+    log_dir="$HOME/.cache/fritz"
+    mkdir -p "$log_dir"
+    echo "== starting the API server (WhatsApp replies; log: $log_dir/server.log)"
+    nohup ./bin/fritz-server >>"$log_dir/server.log" 2>&1 &
+    sleep 1
+    if ! kill -0 $! 2>/dev/null; then
+        echo "   the API server exited — last log lines:" >&2
+        tail -n 15 "$log_dir/server.log" >&2 || true
+    fi
 fi
 
 echo "== Fritz is up — say \"Hi Fritz\" (Ctrl-C stops the voice loop; the eyes keep running)"

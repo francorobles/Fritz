@@ -32,6 +32,11 @@ type Webhook struct {
 	Allow       []string
 	Brain       Replier
 	Logf        func(string)
+	// OnInbound, when set, runs for every owner message before
+	// it is answered: it opens WhatsApp's 24 h window for
+	// free-form alerts and sends any photo held back while the
+	// window was closed (alerts.Notifier.Inbound).
+	OnInbound func(ctx context.Context, msg InboundMessage)
 
 	mu   sync.Mutex
 	seen map[string]time.Time
@@ -128,6 +133,9 @@ func (h *Webhook) duplicate(id string) bool {
 func (h *Webhook) answer(msg InboundMessage) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if h.OnInbound != nil {
+		h.OnInbound(ctx, msg)
+	}
 	reply, err := h.Brain.Reply(ctx, msg.Text)
 	if err != nil {
 		h.logf("whatsapp: brain: %v", err)

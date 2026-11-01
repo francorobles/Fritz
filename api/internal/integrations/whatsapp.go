@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"time"
 )
@@ -75,6 +77,58 @@ func (w *WhatsApp) SendTemplate(ctx context.Context, to, name, language string, 
 	})
 }
 
+// UploadMedia stores a JPEG with WhatsApp and returns its media id
+// (valid for 30 days) for SendImage.
+func (w *WhatsApp) UploadMedia(ctx context.Context, jpeg []byte) (string, error) {
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	_ = form.WriteField("messaging_product", "whatsapp")
+	_ = form.WriteField("type", "image/jpeg")
+	part, err := form.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="file"; filename="fritz.jpg"`},
+		"Content-Type":        {"image/jpeg"},
+	})
+	if err != nil {
+		return "", err
+	}
+	if _, err := part.Write(jpeg); err != nil {
+		return "", err
+	}
+	if err := form.Close(); err != nil {
+		return "", err
+	}
+	url := fmt.Sprintf("%s/%s/%s/media", w.base, w.version, w.phoneID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+w.token)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	respBody, err := w.do(req)
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(respBody, &out); err != nil || out.ID == "" {
+		return "", fmt.Errorf("whatsapp: media upload: no id in %s", truncate(string(respBody), 200))
+	}
+	return out.ID, nil
+}
+
+// SendImage sends an uploaded image with a caption. Free-form, so
+// like SendText it only works inside the 24 h window.
+func (w *WhatsApp) SendImage(ctx context.Context, to, mediaID, caption string) error {
+	return w.post(ctx, map[string]any{
+		"messaging_product": "whatsapp",
+		"recipient_type":    "individual",
+		"to":                digitsOnly(to),
+		"type":              "image",
+		"image":             map[string]any{"id": mediaID, "caption": caption},
+	})
+}
+
 func (w *WhatsApp) post(ctx context.Context, payload map[string]any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -87,9 +141,16 @@ func (w *WhatsApp) post(ctx context.Context, payload map[string]any) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+w.token)
 	req.Header.Set("Content-Type", "application/json")
+	_, err = w.do(req)
+	return err
+}
+
+// do sends a Graph API request and returns the body of a 200,
+// or the Graph error message.
+func (w *WhatsApp) do(req *http.Request) ([]byte, error) {
 	resp, err := w.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("whatsapp: %w", err)
+		return nil, fmt.Errorf("whatsapp: %w", err)
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -101,11 +162,11 @@ func (w *WhatsApp) post(ctx context.Context, payload map[string]any) error {
 			} `json:"error"`
 		}
 		if err := json.Unmarshal(respBody, &graphErr); err == nil && graphErr.Error.Message != "" {
-			return fmt.Errorf("whatsapp: HTTP %d (code %d): %s", resp.StatusCode, graphErr.Error.Code, graphErr.Error.Message)
+			return nil, fmt.Errorf("whatsapp: HTTP %d (code %d): %s", resp.StatusCode, graphErr.Error.Code, graphErr.Error.Message)
 		}
-		return fmt.Errorf("whatsapp: HTTP %d: %s", resp.StatusCode, truncate(string(respBody), 300))
+		return nil, fmt.Errorf("whatsapp: HTTP %d: %s", resp.StatusCode, truncate(string(respBody), 300))
 	}
-	return nil
+	return respBody, nil
 }
 
 // --- Inbound (webhook payloads) ---

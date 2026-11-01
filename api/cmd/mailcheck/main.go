@@ -10,6 +10,12 @@
 // answers. -whatsapp additionally sends the configured alert
 // template to your first allowed number (proof the send path
 // works; it really messages you).
+//
+// Alerts (internal/alerts):
+//
+//	-triage            ask Muse Spark which recent unread mail it would alert on (sends nothing)
+//	-alert "text"      send one alert the way Fritz does: free text inside
+//	                   WhatsApp's 24 h window, the alert template outside it
 package main
 
 import (
@@ -21,7 +27,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/francorobles/fritz/api/internal/alerts"
 	"github.com/francorobles/fritz/api/internal/integrations"
+	"github.com/francorobles/fritz/api/internal/memory"
+	"github.com/francorobles/fritz/api/internal/meta"
 )
 
 var failures int
@@ -39,6 +48,8 @@ func main() {
 	jiraCreate := flag.String("jira-create", "", `create a Jira issue: -jira-create "PROJ|Task|Summary|Description" — asks for a typed YES first`)
 	jiraComment := flag.String("jira-comment", "", `comment on an issue: -jira-comment "FRITZ-7|Looks good" — asks for a typed YES first`)
 	jiraTransition := flag.String("jira-transition", "", `move an issue: -jira-transition "FRITZ-7|Done" — asks for a typed YES first`)
+	triage := flag.Bool("triage", false, "ask Muse Spark which recent unread mail is important (dry run, sends nothing)")
+	alertText := flag.String("alert", "", `send one WhatsApp alert like Fritz does: -alert "Test from Fritz"`)
 	flag.Parse()
 
 	cfg, path, err := integrations.Load()
@@ -150,6 +161,13 @@ func main() {
 				pass("whatsapp: sent template %q to %s — check your phone", name, to)
 			}
 		}
+	}
+
+	if *triage {
+		runTriage(ctx, reg)
+	}
+	if *alertText != "" {
+		sendAlert(ctx, cfg, reg, *alertText)
 	}
 
 	if failures > 0 {
@@ -280,4 +298,64 @@ func transitionJiraIssue(ctx context.Context, reg *integrations.Registry, spec s
 		return
 	}
 	pass("jira: %s moved → %s", key, t.To)
+}
+
+// neverSeen makes -triage judge every unread message without
+// recording anything, so it never hides mail from the real watcher.
+type neverSeen struct{}
+
+func (neverSeen) Alerted(string) (bool, error)                     { return false, nil }
+func (neverSeen) MarkAlerted(string, string, string) (bool, error) { return true, nil }
+
+func runTriage(ctx context.Context, reg *integrations.Registry) {
+	key := os.Getenv("MODEL_API_KEY")
+	if key == "" {
+		fail("triage: MODEL_API_KEY is not set")
+		return
+	}
+	found := 0
+	w := &alerts.MailWatcher{
+		Boxes: reg.Mailboxes, Judge: &meta.Client{APIKey: key}, Seen: neverSeen{},
+		Logf: func(msg string) {},
+		OnImportant: func(_ context.Context, m alerts.ImportantMail) {
+			found++
+			fmt.Printf("  IMPORTANT  %s\n", alerts.EmailAlert(m))
+		},
+	}
+	fmt.Println("\ntriage: asking Muse Spark about recent unread mail (nothing is sent)")
+	if err := w.Check(ctx); err != nil {
+		fail("triage: %v", err)
+		return
+	}
+	if found == 0 {
+		fmt.Println("  nothing it would interrupt you for")
+	}
+	pass("triage: done")
+}
+
+func sendAlert(ctx context.Context, cfg integrations.Config, reg *integrations.Registry, text string) {
+	dbPath := os.Getenv("FRITZ_DB")
+	if dbPath == "" {
+		dbPath = "fritz.db"
+	}
+	store, err := memory.Open(dbPath)
+	if err != nil {
+		fail("alert: memory store: %v", err)
+		return
+	}
+	defer store.Close()
+	n := alerts.NewNotifier(cfg.WhatsApp, reg.WhatsApp, store, dbPath)
+	if n == nil {
+		fail("alert: WhatsApp not ready or no allowed number (see status above)")
+		return
+	}
+	how := fmt.Sprintf("template %q (no message from you in the last 24 h)", n.Template)
+	if n.WindowOpen() {
+		how = "free text (you messaged Fritz in the last 24 h)"
+	}
+	if err := n.Text(ctx, text); err != nil {
+		fail("alert: %v", err)
+		return
+	}
+	pass("alert: sent as %s — check your phone", how)
 }

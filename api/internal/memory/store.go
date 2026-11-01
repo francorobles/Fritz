@@ -43,6 +43,17 @@ CREATE TABLE IF NOT EXISTS sightings (
 	seen_at TEXT NOT NULL,
 	gone_at TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS state (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alerts (
+	key TEXT PRIMARY KEY,
+	kind TEXT NOT NULL,
+	text TEXT NOT NULL DEFAULT '',
+	at TEXT NOT NULL
+);
 `
 
 // Store is a SQLite-backed memory store. Safe for concurrent use:

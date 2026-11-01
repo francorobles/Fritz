@@ -36,6 +36,7 @@ CREATE INDEX IF NOT EXISTS activity_at ON activity(at);
 const (
 	KindTool   = "tool"   // a tool Spark called
 	KindAction = "action" // a pending action confirmed, declined, or failed
+	KindAlert  = "alert"  // Fritz reached out: important email, sentry photo
 )
 
 // MaxDetail caps an entry's detail in characters.
@@ -45,7 +46,7 @@ const MaxDetail = 300
 type Entry struct {
 	ID     int64     `json:"id"`
 	At     time.Time `json:"at"`
-	Source string    `json:"source"` // voice | whatsapp | app
+	Source string    `json:"source"` // voice | whatsapp | app | alerts
 	Kind   string    `json:"kind"`
 	Name   string    `json:"name"` // tool name or action kind
 	Detail string    `json:"detail"`

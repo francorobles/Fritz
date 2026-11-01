@@ -73,6 +73,7 @@ turn text (from voice or web)
 | `calendar_create(title, start, end)` | agent/calendar.go | Built. **Needs confirmation** |
 | `look(question)` | vision | Camera frame + Muse Spark |
 | `find_object(name)` | agent/vision.go | Built. SAM 3.1 live; eyes turn to it for 4 s; otherwise last-seen place/time from the watch-list memory |
+| `sentry_mode(on)` | agent/sentry.go | Built. Flag in the shared DB (`alerts.KeySentry`); voice (needs camera + WhatsApp) and WhatsApp. Turning it off by voice also WhatsApps the owner |
 | `set_face(emotion)` | face | |
 | `remember(fact, kind)` | memory | kind: `routine`, `preference`, `person`, `task` |
 | `recall(query)` | memory | |
@@ -80,6 +81,10 @@ turn text (from voice or web)
 
 Each tool: a Go func with a typed args struct, a JSON schema generated next
 to it, and a unit test with a fake backend.
+
+WhatsApp replies (`internal/chat.Brain`, in `cmd/server`) run the same agent
+loop with mail, email_reply, calendar and `sentry_mode` (no camera tools);
+tool calls go to the activity log with source `whatsapp`.
 
 ## Confirmation rule (enforce in code)
 
@@ -123,3 +128,22 @@ conversation; `FRITZ_GREET=off` disables. Proactive turns skip the
 confirmer, never attach a camera frame, and store only Fritz's line in
 the conversation history. The follow-up window opens after it, so the
 user can answer without the wake word.
+
+Built (alerts, `internal/alerts`, run by `voicecheck`):
+
+- **Important email.** `MailWatcher` polls new unread Gmail every
+  `FRITZ_MAIL_POLL_MS` (default 2 min; promotions/social/forums skipped,
+  only mail newer than startup) and asks Muse Spark to triage it
+  (`judgePrompt`: real people needing a reply, deadlines, money and
+  security problems; "when unsure, not important"; JSON only, ids
+  checked against what was asked). Each email is judged once (`alerts`
+  table). At the desk (tracker sees someone, sentry off) Fritz says it in
+  a proactive turn; otherwise it goes to WhatsApp (`alerts.EmailAlert`).
+  `FRITZ_MAIL_ALERTS=off` disables.
+- **Sentry mode.** Armed by `sentry_mode` (voice or WhatsApp). Every
+  arrival while armed sends a WhatsApp photo (20 s grace after arming,
+  5 s minimum absence against tracking flicker, `FRITZ_SENTRY_COOLDOWN_MS`
+  default 2 min), Fritz looks surprised and says one line to the visitor.
+  While armed: no arrival greeting, and voice turns only get `sentry_mode`
+  plus a prompt forbidding personal details, since the speaker may not be
+  the owner. No face recognition, by design.

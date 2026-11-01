@@ -126,3 +126,46 @@ func TestSignatureAndAllowlist(t *testing.T) {
 		t.Error("wrong verify token must fail")
 	}
 }
+
+// Sentry photos: upload the JPEG as multipart, then send it by id.
+func TestWhatsAppUploadAndSendImage(t *testing.T) {
+	var sent map[string]any
+	transport := transportFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/v21.0/123/media"):
+			if err := req.ParseMultipartForm(1 << 20); err != nil {
+				t.Fatalf("media upload not multipart: %v", err)
+			}
+			if req.FormValue("messaging_product") != "whatsapp" || req.FormValue("type") != "image/jpeg" {
+				t.Errorf("form = %v", req.MultipartForm.Value)
+			}
+			f, hdr, err := req.FormFile("file")
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, _ := io.ReadAll(f)
+			if string(data) != "JPEG" || hdr.Header.Get("Content-Type") != "image/jpeg" {
+				t.Errorf("file = %q (%s)", data, hdr.Header.Get("Content-Type"))
+			}
+			return jsonResponse(200, `{"id":"media-9"}`), nil
+		case strings.HasSuffix(req.URL.Path, "/v21.0/123/messages"):
+			body, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(body, &sent)
+			return jsonResponse(200, `{"messages":[{"id":"wamid.2"}]}`), nil
+		}
+		t.Errorf("unexpected path %s", req.URL.Path)
+		return jsonResponse(404, `{}`), nil
+	})
+	wa := &WhatsApp{http: &http.Client{Transport: transport}, base: "https://graph.example", version: "v21.0", phoneID: "123", token: "tok"}
+	id, err := wa.UploadMedia(context.Background(), []byte("JPEG"))
+	if err != nil || id != "media-9" {
+		t.Fatalf("UploadMedia = %q, %v", id, err)
+	}
+	if err := wa.SendImage(context.Background(), "+63 917 000 0000", id, "Someone's at your desk"); err != nil {
+		t.Fatal(err)
+	}
+	img, _ := sent["image"].(map[string]any)
+	if sent["type"] != "image" || sent["to"] != "639170000000" || img["id"] != "media-9" || img["caption"] != "Someone's at your desk" {
+		t.Errorf("image payload = %v", sent)
+	}
+}

@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/actions"
 	"github.com/francorobles/fritz/api/internal/activity"
 	"github.com/francorobles/fritz/api/internal/agent"
+	"github.com/francorobles/fritz/api/internal/alerts"
 	"github.com/francorobles/fritz/api/internal/chat"
 	"github.com/francorobles/fritz/api/internal/httpapi"
 	"github.com/francorobles/fritz/api/internal/integrations"
@@ -92,8 +95,36 @@ func main() {
 				log.Print("FRITZ_APP_TOKEN unset — /actions phone approval routes are off")
 			}
 		}
+		// WhatsApp replies get the same tools as voice (minus the
+		// camera): read and answer mail, check the calendar, turn
+		// sentry mode off. Gated tools only file pending actions.
+		if brain != nil {
+			brain.Activity = actLog
+			brain.Tools = append(brain.Tools, agent.MailTools(reg.Mailboxes)...)
+			if actStore != nil {
+				brain.Tools = append(brain.Tools, agent.EmailReplyTool(reg.Mailboxes, actStore)...)
+			}
+			if reg.Calendar != nil {
+				brain.Tools = append(brain.Tools, agent.CalendarTools(reg.Calendar)...)
+				if actStore != nil {
+					brain.Tools = append(brain.Tools, agent.CalendarCreateTool(reg.Calendar, actStore)...)
+				}
+			}
+			brain.Tools = append(brain.Tools, agent.SentryTool(store, nil)...)
+			names := make([]string, len(brain.Tools))
+			for i, t := range brain.Tools {
+				names[i] = t.Name
+			}
+			log.Printf("whatsapp tools: %s", strings.Join(names, ", "))
+		}
 		if reg.WhatsAppHook != nil {
 			reg.WhatsAppHook.Logf = func(msg string) { log.Print(msg) }
+			// Every owner message opens WhatsApp's 24 h window for
+			// free-form alerts and releases a held sentry photo.
+			if notifier := alerts.NewNotifier(icfg.WhatsApp, reg.WhatsApp, store, dbPath); notifier != nil {
+				notifier.Logf = func(msg string) { log.Print(msg) }
+				reg.WhatsAppHook.OnInbound = func(ctx context.Context, _ integrations.InboundMessage) { notifier.Inbound(ctx) }
+			}
 			hook = reg.WhatsAppHook
 			log.Print("WhatsApp webhook mounted at /webhooks/whatsapp (expose it publicly for Meta to reach it)")
 		}

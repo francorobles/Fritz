@@ -105,8 +105,31 @@ Setup (by the user, once):
    with the verify token, and subscribe to `messages`.
 8. Alerts outside the 24 h window need an approved template: submit a
    Utility template early (approval can take hours), e.g. `fritz_alert`,
-   body `Fritz needs your OK: {{1}} Reply YES to approve.` Until it's
-   approved, message Fritz first so free-form replies are allowed.
+   body `Hi, it's Fritz. {{1}} Reply here to talk to me.` — exactly one
+   variable, not at the start or end (Meta rejects that). The alert text
+   (important email, someone at the desk) fills `{{1}}`. Until it's
+   approved, message Fritz first so free-form messages are allowed.
+
+### Alerts (`internal/alerts`)
+
+`Notifier` sends to the first `allow` number. Inside the 24 h window
+(your last message, recorded by the webhook's `OnInbound` in the shared
+DB) it sends free text and photos; outside it, the `alert_template`
+(`hello_world` sends no variables, for wiring tests). WhatsApp *accepts*
+a free-form send outside the window and fails it later on the status
+webhook, so the window is tracked, never guessed from errors. A sentry
+photo can't go out with the window closed: the text goes as a template
+("Reply here and I'll send the photo") and the photo waits next to the
+DB (`sentry/`, gitignored) until you reply. Every alert is also stored
+as one of Fritz's turns, so "read it to me" has context.
+
+The voice loop runs the watchers; `cmd/server` answers replies. They
+must share `FRITZ_DB` (`scripts/run-fritz.sh` sets it and starts the
+server in the background; log `~/.cache/fritz/server.log`).
+
+Test without waiting for real mail:
+`go run ./cmd/mailcheck -triage` (what Spark would flag, sends nothing),
+`go run ./cmd/mailcheck -alert "Test from Fritz"` (one real alert).
 
 ## Social media — deferred
 
