@@ -51,8 +51,9 @@ func TestBrainUsesTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reply != "Welcome back, I've stopped watching." {
-		t.Errorf("reply = %q", reply)
+	// sentry_mode confirms itself: no second model round.
+	if reply != "Okay, sentry mode is off." || round != 1 {
+		t.Errorf("reply = %q after %d model calls", reply, round)
 	}
 	if on, _ := alerts.SentryArmed(st); on {
 		t.Error("sentry still on after the tool call")

@@ -205,3 +205,46 @@ func TestNoMailboxesNoTools(t *testing.T) {
 		t.Errorf("MailTools(nil) = %d tools, want none", len(tools))
 	}
 }
+
+// TestConfirmSkipsSecondRound: a switch-like tool with its own
+// confirmation is answered without a second model call — unless it
+// failed, in which case the model explains the error.
+func TestConfirmSkipsSecondRound(t *testing.T) {
+	ran := 0
+	tool := Tool{Name: "focus_mode",
+		Run: func(_ context.Context, raw json.RawMessage) (any, error) {
+			ran++
+			if strings.Contains(string(raw), "bad") {
+				return nil, errors.New("broken")
+			}
+			return map[string]any{"until": "3:30 PM"}, nil
+		},
+		Confirm: func(out any) string { return "Quiet until " + out.(map[string]any)["until"].(string) + "." },
+	}
+	spark := &fakeSpark{rounds: []meta.StreamResult{
+		{Text: "Sure.", ToolCalls: []meta.ToolCall{call("1", "focus_mode", `{}`)}},
+	}}
+	var spoken strings.Builder
+	a := &Agent{Chat: spark, Tools: []Tool{tool}}
+	text, err := a.Run(context.Background(), []meta.Message{{Role: "user", Content: "let me focus"}}, func(d string) { spoken.WriteString(d) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spark.sent) != 1 || ran != 1 {
+		t.Fatalf("model calls = %d, tool runs = %d; want 1, 1", len(spark.sent), ran)
+	}
+	if text != "Sure. Quiet until 3:30 PM." || spoken.String() != text {
+		t.Errorf("text = %q, spoken = %q", text, spoken.String())
+	}
+
+	// A failed call has no confirmation: the model gets the error.
+	spark = &fakeSpark{rounds: []meta.StreamResult{
+		{ToolCalls: []meta.ToolCall{call("1", "focus_mode", `{"bad":1}`)}},
+		{Text: "Sorry, I couldn't start focus mode."},
+	}}
+	a.Chat = spark
+	text, err = a.Run(context.Background(), []meta.Message{{Role: "user", Content: "let me focus"}}, func(string) {})
+	if err != nil || len(spark.sent) != 2 || !strings.Contains(text, "couldn't") {
+		t.Errorf("failed tool: calls=%d text=%q err=%v", len(spark.sent), text, err)
+	}
+}

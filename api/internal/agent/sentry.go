@@ -49,5 +49,11 @@ func SentryTool(flags alerts.FlagStore, onChange func(ctx context.Context, on bo
 			}
 			return map[string]any{"sentry": "off", "note": "Stopped watching."}, nil
 		},
+		Confirm: func(out any) string {
+			if m, _ := out.(map[string]any); m["sentry"] == "on" {
+				return "Sentry mode is on. If anyone comes to your desk, I'll send you a photo on WhatsApp."
+			}
+			return "Okay, sentry mode is off."
+		},
 	}}
 }

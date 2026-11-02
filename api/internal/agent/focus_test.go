@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/francorobles/fritz/api/internal/alerts"
@@ -62,5 +63,33 @@ func TestFocusTools(t *testing.T) {
 	run("save_progress", `{"task":"stopped at the pricing section","next":"the discount table"}`)
 	if out := run("where_was_i", `{}`); out["task"] != "stopped at the pricing section" || out["next"] != "the discount table" {
 		t.Errorf("where_was_i = %v", out)
+	}
+}
+
+func TestFocusConfirmations(t *testing.T) {
+	st, err := memory.Open(filepath.Join(t.TempDir(), "fritz.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	tools := map[string]Tool{}
+	for _, tool := range FocusTools(&alerts.Focus{State: st}, func(string) error { return nil }) {
+		tools[tool.Name] = tool
+	}
+	out, _ := tools["focus_mode"].Run(context.Background(), json.RawMessage(`{"action":"start","minutes":30}`))
+	if c := tools["focus_mode"].Confirm(out); !strings.HasPrefix(c, "I'll keep things quiet until ") || strings.Contains(c, "PM") || strings.Contains(c, "AM") {
+		t.Errorf("start confirmation = %q", c)
+	}
+	out, _ = tools["focus_mode"].Run(context.Background(), json.RawMessage(`{"action":"status"}`))
+	if c := tools["focus_mode"].Confirm(out); c != "" {
+		t.Errorf("status must be phrased by the model, got %q", c)
+	}
+	for _, name := range []string{"interruption_rule", "save_progress"} {
+		if tools[name].Confirm == nil {
+			t.Errorf("%s has no confirmation", name)
+		}
+	}
+	if tools["where_was_i"].Confirm != nil {
+		t.Error("where_was_i must be phrased by the model")
 	}
 }

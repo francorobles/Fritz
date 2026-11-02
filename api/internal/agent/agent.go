@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +24,12 @@ type Tool struct {
 	Description string
 	Parameters  map[string]any // JSON Schema object
 	Run         func(ctx context.Context, args json.RawMessage) (any, error)
+	// Confirm, when set, turns a successful result into the spoken
+	// reply ("Okay, I'll keep things quiet until 3:30."), so simple
+	// switches skip the second model round — half the wait on the
+	// turns a demo leans on. "" means the model should phrase it
+	// (e.g. focus_mode status has held messages to summarize).
+	Confirm func(out any) string
 }
 
 // Streamer is the slice of meta.Client the loop needs (a fake in
@@ -94,12 +101,14 @@ func (a *Agent) Run(ctx context.Context, messages []meta.Message, emit func(delt
 			return text.String(), fmt.Errorf("agent: still calling tools after %d rounds", maxRounds)
 		}
 		msgs = append(msgs, meta.Message{Role: "assistant", Content: res.Text, ToolCalls: res.ToolCalls})
+		var confirms []string
 		for _, call := range res.ToolCalls {
 			started := time.Now()
-			result := a.call(ctx, call)
+			result, confirm := a.call(ctx, call)
 			if a.AfterTool != nil {
 				a.AfterTool(call.Function.Name, call.Function.Arguments, result, time.Since(started))
 			}
+			confirms = append(confirms, confirm)
 			if round == maxRounds-1 {
 				// Last allowed round: the next reply must be the
 				// answer. The tools stay listed (the history
@@ -108,13 +117,25 @@ func (a *Agent) Run(ctx context.Context, messages []meta.Message, emit func(delt
 			}
 			msgs = append(msgs, meta.Message{Role: "tool", ToolCallID: call.ID, Content: result})
 		}
+		// Every call this round has its own confirmation: speak
+		// those and finish without asking the model again.
+		if !slices.Contains(confirms, "") {
+			reply := strings.Join(confirms, " ")
+			if text.Len() > 0 && !strings.HasSuffix(text.String(), " ") {
+				reply = " " + reply
+			}
+			emit(reply)
+			text.WriteString(reply)
+			return text.String(), nil
+		}
 	}
 }
 
-// call runs one tool call and returns its JSON result. Failures go
-// back to the model as {"error": ...} so it can tell the user,
-// instead of failing the whole turn.
-func (a *Agent) call(ctx context.Context, call meta.ToolCall) string {
+// call runs one tool call and returns its JSON result, plus the
+// tool's own confirmation when it has one and the call succeeded.
+// Failures go back to the model as {"error": ...} so it can tell the
+// user, instead of failing the whole turn.
+func (a *Agent) call(ctx context.Context, call meta.ToolCall) (result, confirm string) {
 	if a.OnTool != nil {
 		a.OnTool(call.Function.Name, call.Function.Arguments)
 	}
@@ -126,24 +147,27 @@ func (a *Agent) call(ctx context.Context, call meta.ToolCall) string {
 		}
 	}
 	if tool == nil {
-		return errJSON(fmt.Errorf("no tool named %q", call.Function.Name))
+		return errJSON(fmt.Errorf("no tool named %q", call.Function.Name)), ""
 	}
 	args := json.RawMessage(call.Function.Arguments)
 	if strings.TrimSpace(call.Function.Arguments) == "" {
 		args = json.RawMessage("{}")
 	}
 	if !json.Valid(args) {
-		return errJSON(fmt.Errorf("arguments are not valid JSON"))
+		return errJSON(fmt.Errorf("arguments are not valid JSON")), ""
 	}
 	out, err := tool.Run(ctx, args)
 	if err != nil {
-		return errJSON(err)
+		return errJSON(err), ""
 	}
 	data, err := json.Marshal(out)
 	if err != nil {
-		return errJSON(err)
+		return errJSON(err), ""
 	}
-	return string(data)
+	if tool.Confirm != nil {
+		confirm = strings.TrimSpace(tool.Confirm(out))
+	}
+	return string(data), confirm
 }
 
 func errJSON(err error) string {

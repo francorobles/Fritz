@@ -70,6 +70,14 @@ func FocusTools(focus *alerts.Focus, remember func(rule string) error) []Tool {
 				}
 				return nil, fmt.Errorf("action must be start, stop or status")
 			},
+			Confirm: func(out any) string {
+				m, _ := out.(map[string]any)
+				if until, ok := m["until"].(string); ok && m["minutes"] != nil {
+					return "I'll keep things quiet until " + strings.TrimSuffix(strings.TrimSuffix(until, " AM"), " PM") +
+						", and only interrupt if something can't wait."
+				}
+				return "" // stop/status: the model summarizes what was held
+			},
 		},
 		{
 			Name: "interruption_rule",
@@ -99,6 +107,7 @@ func FocusTools(focus *alerts.Focus, remember func(rule string) error) []Tool {
 				}
 				return map[string]any{"saved": rule, "note": "It applies from the next email. Confirm briefly in your own words."}, nil
 			},
+			Confirm: func(any) string { return "Got it. I'll follow that from the next email on." },
 		},
 		{
 			Name: "save_progress",
@@ -129,6 +138,7 @@ func FocusTools(focus *alerts.Focus, remember func(rule string) error) []Tool {
 				}
 				return map[string]any{"saved": true, "note": "Confirm in a few words."}, nil
 			},
+			Confirm: func(any) string { return "Got it. I'll remind you when you're back." },
 		},
 		{
 			Name:        "where_was_i",

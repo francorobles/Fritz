@@ -85,6 +85,14 @@ turn text (from voice or web)
 Each tool: a Go func with a typed args struct, a JSON schema generated next
 to it, and a unit test with a fake backend.
 
+Fast confirmations: a tool may set `Confirm(out) string`. When every
+call in a round succeeded and confirmed itself, the loop speaks those
+lines and ends the turn without a second Spark round (about half the
+latency). Used by `focus_mode start`, `interruption_rule`,
+`save_progress` and `sentry_mode`; anything that returns data to
+summarize (email, calendar, focus status, where_was_i) returns "" or has
+no Confirm, so the model still phrases it.
+
 WhatsApp replies (`internal/chat.Brain`, in `cmd/server`) run the same agent
 loop with mail, email_reply, calendar and `sentry_mode` (no camera tools);
 tool calls go to the activity log with source `whatsapp`.
