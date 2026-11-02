@@ -290,3 +290,92 @@ func TestSentry(t *testing.T) {
 		t.Error("alerted after sentry was turned off")
 	}
 }
+
+func TestFocusHoldsWhatCanWait(t *testing.T) {
+	st := openStore(t)
+	clock := time.Now()
+	f := &Focus{State: st, Now: func() time.Time { return clock }}
+	normal := ImportantMail{Mail: integrations.Summary{From: "Dana <d@x.com>", Subject: "Q4 update"}, Why: "project update"}
+	urgent := ImportantMail{Mail: integrations.Summary{From: "Bank", Subject: "Payment failed"}, Urgent: true}
+	ruled := ImportantMail{Mail: integrations.Summary{From: "Jira", Subject: "Sprint notes"}, Hold: true}
+
+	// Not focusing: only the user's rule holds anything.
+	if hold, _ := f.ShouldHold(normal); hold {
+		t.Error("held without focus or rule")
+	}
+	if hold, why := f.ShouldHold(ruled); !hold || !strings.Contains(why, "rule") {
+		t.Errorf("rule not applied: %v %q", hold, why)
+	}
+	// Focusing: what can wait is held; urgent breaks through.
+	if _, err := f.Start(30 * time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if hold, why := f.ShouldHold(normal); !hold || why != "focus mode" {
+		t.Errorf("focus did not hold: %v %q", hold, why)
+	}
+	if hold, _ := f.ShouldHold(urgent); hold {
+		t.Error("urgent mail held during focus")
+	}
+	_ = f.Hold(HeldMail(normal))
+	if got := f.Held(); len(got) != 1 || !strings.Contains(got[0].Text, `Email from Dana: "Q4 update" (project update)`) {
+		t.Fatalf("held = %+v", got)
+	}
+	// The timer runs out: Expired until wrapped up, then the
+	// digest is taken once.
+	clock = clock.Add(31 * time.Minute)
+	if _, on := f.Active(); on || !f.Expired() {
+		t.Fatal("focus should have expired")
+	}
+	_ = f.Stop()
+	if f.Expired() {
+		t.Error("still expired after Stop")
+	}
+	if d := Digest(f.TakeHeld()); !strings.Contains(d, "Q4 update") {
+		t.Errorf("digest = %q", d)
+	}
+	if len(f.TakeHeld()) != 0 {
+		t.Error("digest repeated")
+	}
+}
+
+func TestRulesReachTheJudge(t *testing.T) {
+	st := openStore(t)
+	box := &fakeBox{name: "gmail", list: []integrations.Summary{{Account: "gmail", ID: "a", Subject: "Sprint notes", Date: time.Now(), Unread: true}}}
+	judge := &fakeJudge{reply: `{"important":[{"id":"a","why":"project update","urgent":false,"hold":true}]}`}
+	var got []ImportantMail
+	w := &MailWatcher{Boxes: []integrations.Mailbox{box}, Judge: judge, Seen: st,
+		Rules: func() []string {
+			return Rules([]string{"User likes tea", RulePrefix + "hold project updates unless there's a deadline"})
+		},
+		OnImportant: func(_ context.Context, m ImportantMail) { got = append(got, m) }}
+	var system string
+	w.Judge = judgeFunc(func(msgs []meta.Message) (string, error) {
+		system = msgs[0].Content
+		return judge.reply, nil
+	})
+	if err := w.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(system, "- hold project updates unless there's a deadline") || strings.Contains(system, "likes tea") {
+		t.Errorf("rules section wrong: %s", system[strings.Index(system, "interruption rules (follow"):])
+	}
+	if len(got) != 1 || !got[0].Hold || got[0].Urgent {
+		t.Errorf("flags not parsed: %+v", got)
+	}
+}
+
+type judgeFunc func([]meta.Message) (string, error)
+
+func (f judgeFunc) Chat(_ context.Context, msgs []meta.Message) (string, error) { return f(msgs) }
+
+func TestProgressRoundTrip(t *testing.T) {
+	st := openStore(t)
+	if _, ok := LoadProgress(st); ok {
+		t.Fatal("progress before any was saved")
+	}
+	_ = SaveProgress(st, Progress{Task: "pricing section", Next: "discount table", At: time.Now()})
+	p, ok := LoadProgress(st)
+	if !ok || p.Task != "pricing section" || p.Next != "discount table" {
+		t.Errorf("progress = %+v, %v", p, ok)
+	}
+}

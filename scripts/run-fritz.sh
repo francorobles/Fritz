@@ -12,6 +12,7 @@
 #   ~/Fritz/scripts/run-fritz.sh --pull     # git pull first
 #   ~/Fritz/scripts/run-fritz.sh --no-build # just restart, skip the builds
 #   ~/Fritz/scripts/run-fritz.sh --no-server # don't (re)start the API server
+#   ~/Fritz/scripts/run-fritz.sh --demo     # demo-recording timings (below)
 # Extra arguments after `--` go to voicecheck.
 # Server log: ~/.cache/fritz/server.log
 
@@ -22,13 +23,15 @@ env_file="${FRITZ_ENV_FILE:-/etc/fritz/fritz.env}"
 pull=0
 build=1
 server=1
+demo=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --pull) pull=1 ;;
         --no-build) build=0 ;;
         --no-server) server=0 ;;
+        --demo) demo=1 ;;
         --) shift; break ;;
-        -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
         *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
     shift
@@ -108,6 +111,21 @@ set +a
 # The voice loop and the server share one database: the sentry switch,
 # what was already alerted, and your WhatsApp replies meet there.
 export FRITZ_DB="${FRITZ_DB:-$repo/api/fritz.db}"
+
+# --- Demo timings (--demo) --------------------------------------------------
+# Tuned for a recording, not daily use: things happen within seconds
+# of the cue, and background camera load stays low so SAM stays
+# under its rate limit. Timings already set in the env file win;
+# the watch list comes from FRITZ_DEMO_OBJECTS (default: keys).
+if [ "$demo" -eq 1 ]; then
+    echo "== demo mode: fast greeting and mail, light background vision"
+    export FRITZ_WATCH_OBJECTS="${FRITZ_DEMO_OBJECTS:-keys}" # only what the demo asks for
+    export FRITZ_GREET_AWAY_MS="${FRITZ_GREET_AWAY_MS:-15000}"   # greet after 15 s away
+    export FRITZ_GREET_EVERY_MS="${FRITZ_GREET_EVERY_MS:-30000}"
+    export FRITZ_MAIL_POLL_MS="${FRITZ_MAIL_POLL_MS:-20000}"     # a sent email shows up in ~20 s
+    export FRITZ_SENTRY_COOLDOWN_MS="${FRITZ_SENTRY_COOLDOWN_MS:-30000}"
+    export FRITZ_TRACK_HZ="${FRITZ_TRACK_HZ:-1}"
+fi
 if [ "$build" -eq 1 ] || [ ! -x bin/voicecheck ]; then
     echo "== building the voice loop"
     go build -o bin/voicecheck ./cmd/voicecheck

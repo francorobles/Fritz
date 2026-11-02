@@ -49,6 +49,9 @@ func main() {
 	jiraComment := flag.String("jira-comment", "", `comment on an issue: -jira-comment "FRITZ-7|Looks good" — asks for a typed YES first`)
 	jiraTransition := flag.String("jira-transition", "", `move an issue: -jira-transition "FRITZ-7|Done" — asks for a typed YES first`)
 	triage := flag.Bool("triage", false, "ask Muse Spark which recent unread mail is important (dry run, sends nothing)")
+	var rules ruleFlags
+	flag.Var(&rules, "rule", `with -triage: an interruption rule to judge with (repeatable): -rule "hold project updates unless there's a deadline"`)
+	spark := flag.Bool("spark", false, "check the Meta API key with one tiny Muse Spark call (preflight)")
 	alertText := flag.String("alert", "", `send one WhatsApp alert like Fritz does: -alert "Test from Fritz"`)
 	flag.Parse()
 
@@ -163,8 +166,11 @@ func main() {
 		}
 	}
 
+	if *spark {
+		checkSpark(ctx)
+	}
 	if *triage {
-		runTriage(ctx, reg)
+		runTriage(ctx, reg, rules)
 	}
 	if *alertText != "" {
 		sendAlert(ctx, cfg, reg, *alertText)
@@ -307,7 +313,12 @@ type neverSeen struct{}
 func (neverSeen) Alerted(string) (bool, error)                     { return false, nil }
 func (neverSeen) MarkAlerted(string, string, string) (bool, error) { return true, nil }
 
-func runTriage(ctx context.Context, reg *integrations.Registry) {
+type ruleFlags []string
+
+func (r *ruleFlags) String() string     { return strings.Join(*r, "; ") }
+func (r *ruleFlags) Set(v string) error { *r = append(*r, v); return nil }
+
+func runTriage(ctx context.Context, reg *integrations.Registry, rules []string) {
 	key := os.Getenv("MODEL_API_KEY")
 	if key == "" {
 		fail("triage: MODEL_API_KEY is not set")
@@ -316,10 +327,20 @@ func runTriage(ctx context.Context, reg *integrations.Registry) {
 	found := 0
 	w := &alerts.MailWatcher{
 		Boxes: reg.Mailboxes, Judge: &meta.Client{APIKey: key}, Seen: neverSeen{},
-		Logf: func(msg string) {},
+		Logf:  func(msg string) {},
+		Rules: func() []string { return rules },
 		OnImportant: func(_ context.Context, m alerts.ImportantMail) {
 			found++
-			fmt.Printf("  IMPORTANT  %s\n", alerts.EmailAlert(m))
+			// What Fritz would do with it: hold (rule), interrupt
+			// even during focus (urgent), or tell you normally.
+			action := "tell you"
+			switch {
+			case m.Hold:
+				action = "HOLD (your rule)"
+			case m.Urgent:
+				action = "URGENT (breaks focus)"
+			}
+			fmt.Printf("  %-22s %s\n", action, alerts.EmailAlert(m))
 		},
 	}
 	fmt.Println("\ntriage: asking Muse Spark about recent unread mail (nothing is sent)")
@@ -358,4 +379,21 @@ func sendAlert(ctx context.Context, cfg integrations.Config, reg *integrations.R
 		return
 	}
 	pass("alert: sent as %s — check your phone", how)
+}
+
+// checkSpark proves the Meta API key works (an expired or rotated
+// key is the most common "Fritz went quiet") without printing it.
+func checkSpark(ctx context.Context) {
+	key := os.Getenv("MODEL_API_KEY")
+	if key == "" {
+		fail("spark: MODEL_API_KEY is not set")
+		return
+	}
+	start := time.Now()
+	reply, err := (&meta.Client{APIKey: key}).Chat(ctx, []meta.Message{{Role: "user", Content: "Reply with the single word OK."}})
+	if err != nil {
+		fail("spark: %v", err)
+		return
+	}
+	pass("spark     Muse Spark answered %q in %s", strings.TrimSpace(reply), time.Since(start).Round(100*time.Millisecond))
 }

@@ -74,6 +74,9 @@ turn text (from voice or web)
 | `look(question)` | vision | Camera frame + Muse Spark |
 | `find_object(name)` | agent/vision.go | Built. SAM 3.1 live; eyes turn to it for 4 s; otherwise last-seen place/time from the watch-list memory |
 | `sentry_mode(on)` | agent/sentry.go | Built. Flag in the shared DB (`alerts.KeySentry`); voice (needs camera + WhatsApp) and WhatsApp. Turning it off by voice also WhatsApps the owner |
+| `focus_mode(action, minutes)` | agent/focus.go | Built. start/stop/status; `alerts.Focus` (`focus_until`, held queue in the shared DB). stop/status return the held messages |
+| `interruption_rule(rule)` | agent/focus.go | Built. Stored as a `preference` memory prefixed `alerts.RulePrefix` (dashboard-visible, deletable); the mail judge reads rules at every check |
+| `save_progress(task, next)` / `where_was_i()` | agent/focus.go | Built. `alerts.Progress` in the shared DB; the arrival greeting mentions it once |
 | `set_face(emotion)` | face | |
 | `remember(fact, kind)` | memory | kind: `routine`, `preference`, `person`, `task` |
 | `recall(query)` | memory | |
@@ -147,3 +150,13 @@ Built (alerts, `internal/alerts`, run by `voicecheck`):
   While armed: no arrival greeting, and voice turns only get `sentry_mode`
   plus a prompt forbidding personal details, since the speaker may not be
   the owner. No face recognition, by design.
+- **Focus mode and interruption rules.** The judge also returns `urgent`
+  (can't wait an hour) and `hold` (an interruption rule says to hold it,
+  exceptions applied). `Focus.ShouldHold`: rule-held mail is always held;
+  during focus, anything not urgent is held. Held mail goes to a queue
+  (never spoken or WhatsApped) and comes back as one digest when focus
+  expires (`focusOverPrompt`, only if the user is at the desk) or in the
+  arrival greeting. An urgent email during focus gets an "excuse the
+  interruption" prompt. When the arrival greeting already has progress
+  or held messages to say, it skips the slow email/calendar tool calls.
+  Dry-run rules on real mail: `go run ./cmd/mailcheck -triage -rule "..."`.

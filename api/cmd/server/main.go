@@ -131,6 +131,10 @@ func main() {
 	}
 
 	log.Printf("fritz-api listening on %s (memory: %s)", addr, dbPath)
+	if os.Getenv("FRITZ_APP_TOKEN") == "" {
+		log.Print("WARNING: FRITZ_APP_TOKEN unset — memories, conversation and activity are served without auth; " +
+			"never point a Tailscale Funnel at this whole port")
+	}
 	log.Fatal(http.ListenAndServe(addr, httpapi.NewRouter(httpapi.Deps{
 		Store:        store,
 		Meta:         metaClient,

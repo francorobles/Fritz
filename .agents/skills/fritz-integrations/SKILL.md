@@ -99,8 +99,12 @@ Setup (by the user, once):
    "verify_token_env": "FRITZ_WA_VERIFY_TOKEN", "allow": ["63917..."],
    "alert_template": "hello_world"}`.
 6. Test sending: `go run ./cmd/mailcheck -whatsapp`.
-7. Inbound: run `cmd/server` on the Pi, expose it with
-   `sudo tailscale funnel --bg 8080`, then in the app's WhatsApp →
+7. Inbound: run `cmd/server` on the Pi and expose **only the webhook
+   path** (never the whole port: `/turns` and `/memories` are personal):
+   `sudo tailscale funnel reset` then
+   `sudo tailscale funnel --bg --set-path /webhooks/whatsapp http://127.0.0.1:8080/webhooks/whatsapp`.
+   Also set `FRITZ_APP_TOKEN` (`openssl rand -hex 24`) so the personal
+   routes need it anyway; `scripts/preflight.sh` checks both. Then in the app's WhatsApp →
    Configuration set the callback to `https://<pi>.<tailnet>.ts.net/webhooks/whatsapp`
    with the verify token, and subscribe to `messages`.
 8. Alerts outside the 24 h window need an approved template: submit a

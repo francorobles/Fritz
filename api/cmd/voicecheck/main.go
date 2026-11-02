@@ -221,6 +221,17 @@ func main() {
 			fmt.Println("alerts: WhatsApp not ready — important email is only spoken at the desk, and sentry mode is off")
 		}
 	}
+	// Heads-down tools: focus mode, interruption rules, and "where
+	// was I". Rules are preference memories (dashboard-visible),
+	// read by the mail watcher at every check.
+	focus := &alerts.Focus{State: store}
+	tools = append(tools, agent.FocusTools(focus, func(rule string) error {
+		_, err := store.Remember(memory.KindPreference, alerts.RulePrefix+rule, "conversation", 0.95)
+		if err == nil {
+			_ = actLog.Add(activity.Entry{Source: "voice", Kind: activity.KindAlert, Name: "interruption_rule", Detail: "new rule: " + rule, OK: true})
+		}
+		return err
+	})...)
 	if len(tools) > 0 {
 		names := make([]string, len(tools))
 		for i, t := range tools {
@@ -236,6 +247,9 @@ func main() {
 	// follow is also how respond() tells the model whether Fritz
 	// can currently see the user.
 	var follow *vision.Tracker
+	// replying is true while Fritz is answering; background camera
+	// scans wait so they don't compete with the reply's own calls.
+	var replying atomic.Bool
 	var frames *vision.FrameSource
 	var sentry *alerts.Sentry
 	if vision.CameraOff() {
@@ -247,7 +261,10 @@ func main() {
 		frames.Logf = func(msg string) { fmt.Println(msg) }
 		go frames.Run(ctx)
 		visionCfg := vision.ConfigFromEnv()
-		follow = vision.NewTracker(chat, faceClient, frames, visionCfg)
+		// One limiter for every SAM caller: on a rate limit they
+		// all back off together instead of making it worse.
+		sam := &vision.Limiter{Seg: chat, Logf: func(msg string) { fmt.Println(msg) }}
+		follow = vision.NewTracker(sam, faceClient, frames, visionCfg)
 		follow.Logf = func(msg string) { fmt.Println(msg) }
 		go follow.Run(ctx)
 
@@ -255,9 +272,10 @@ func main() {
 		// background scan of a short watch list so Fritz knows
 		// where things were after they leave the frame. Sightings
 		// persist in the memory store across restarts.
-		finder := vision.NewFinder(chat, frames, visionCfg)
+		finder := vision.NewFinder(sam, frames, visionCfg)
 		finder.Watch = vision.WatchFromEnv()
 		finder.Logf = func(msg string) { fmt.Println(msg) }
+		finder.Busy = replying.Load
 		if saved, serr := store.Sightings(); serr == nil {
 			restored := make([]vision.Sighting, len(saved))
 			for i, v := range saved {
@@ -333,6 +351,8 @@ func main() {
 	respond := func(request, heard string, heardAt time.Time, proactive bool) {
 		replyMu.Lock()
 		defer replyMu.Unlock()
+		replying.Store(true)
+		defer replying.Store(false)
 		// The follow-up window must open when speaking FINISHES:
 		// MarkReplied(time.Now()) as a bare defer evaluates
 		// time.Now() immediately, so a long spoken confirmation
@@ -420,6 +440,11 @@ func main() {
 			if slices.ContainsFunc(tools, func(t agent.Tool) bool { return t.Name == "find_object" }) {
 				system += "\nWhen the user asks where something physical is (keys, wallet, glasses...), use find_object: " +
 					"if it's in view say where from their seat; if not, say when and where you last saw it. Never guess a location."
+			}
+			if slices.ContainsFunc(tools, func(t agent.Tool) bool { return t.Name == "focus_mode" }) {
+				system += "\nYou guard the user's focus. When they want to focus or not be disturbed, use focus_mode; when they say what " +
+					"should or shouldn't interrupt them, use interruption_rule; when they say where they're stopping, use save_progress. " +
+					"Confirm these in a few words — they're busy."
 			}
 			if len(caps) == 0 {
 				caps = append(caps, "camera")
@@ -726,10 +751,36 @@ func main() {
 				replyMu.Unlock()
 				lastGreet = now
 				fmt.Println("[greeting: user arrived]")
-				respond(arrivalPrompt(leftAt, now, actLog), "", time.Time{}, true)
+				respond(arrivalPrompt(leftAt, now, actLog, focus), "", time.Time{}, true)
 			}
 		}()
 	}
+
+	// End of focus: one digest of what was held. If the user isn't
+	// at the desk when the timer runs out, the held messages wait
+	// for the arrival greeting instead.
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			if !focus.Expired() {
+				continue
+			}
+			_ = focus.Stop()
+			_ = actLog.Add(activity.Entry{Source: "voice", Kind: activity.KindAlert, Name: "focus_mode", Detail: "focus time over", OK: true})
+			if follow != nil && !follow.Present() {
+				fmt.Println("[focus over — you're away; the digest waits for your return]")
+				continue
+			}
+			fmt.Println("[focus over — digest]")
+			go respond(focusOverPrompt(focus.TakeHeld()), "", time.Time{}, true)
+		}
+	}()
 
 	// Important email: Spark triages new unread mail every couple of
 	// minutes. At the desk Fritz says it out loud; away (or with
@@ -740,15 +791,32 @@ func main() {
 			Boxes: mailBoxes, Judge: chat, Seen: store,
 			Every: envMillis("FRITZ_MAIL_POLL_MS", 120000),
 			About: func() string { snap, _ := store.SnapshotText(30); return snap },
-			Logf:  func(msg string) { fmt.Println(msg) },
+			Rules: func() []string {
+				mems, _ := store.List()
+				texts := make([]string, len(mems))
+				for i, m := range mems {
+					texts[i] = m.Text
+				}
+				return alerts.Rules(texts)
+			},
+			Logf: func(msg string) { fmt.Println(msg) },
 			OnImportant: func(ctx context.Context, m alerts.ImportantMail) {
 				detail := fmt.Sprintf("%s: %s (%s)", m.Sender(), m.Mail.Subject, m.Why)
+				if hold, why := focus.ShouldHold(m); hold {
+					if err := focus.Hold(alerts.HeldMail(m)); err != nil {
+						fmt.Println("alerts: hold:", err)
+					}
+					fmt.Printf("[alert: important email held for later — %s]\n", why)
+					_ = actLog.Add(activity.Entry{Source: "alerts", Kind: activity.KindAlert, Name: "important_email", Detail: "held (" + why + "): " + detail, OK: true})
+					return
+				}
+				_, focused := focus.Active()
 				atDesk := follow != nil && follow.Present() && (sentry == nil || !sentry.Armed())
 				switch {
 				case atDesk:
 					fmt.Println("[alert: important email — telling you out loud]")
 					_ = actLog.Add(activity.Entry{Source: "alerts", Kind: activity.KindAlert, Name: "important_email", Detail: "spoken: " + detail, OK: true})
-					go respond(importantMailPrompt(m), "", time.Time{}, true)
+					go respond(importantMailPrompt(m, focused), "", time.Time{}, true)
 				case notifier != nil:
 					err := notifier.Text(ctx, alerts.EmailAlert(m))
 					_ = actLog.Add(activity.Entry{Source: "alerts", Kind: activity.KindAlert, Name: "important_email", Detail: "whatsapp: " + detail, OK: err == nil})
@@ -958,10 +1026,15 @@ const sentryPrompt = "Sentry mode is on: the owner is away and someone has just 
 
 // importantMailPrompt asks Fritz to mention an important email out
 // loud, briefly, when the user is at the desk.
-func importantMailPrompt(m alerts.ImportantMail) string {
+func importantMailPrompt(m alerts.ImportantMail, focused bool) string {
 	why := ""
 	if m.Why != "" {
 		why = " (" + m.Why + ")"
+	}
+	if focused {
+		return fmt.Sprintf("The user is in focus mode, but an urgent email just arrived: from %s, subject %q%s. "+
+			"Briefly apologize for interrupting, say in one sentence who it's from and why it can't wait, then ask if they "+
+			"want you to read it. Don't read the whole email.", m.Sender(), m.Mail.Subject, why)
 	}
 	return fmt.Sprintf("An email that looks important just arrived: from %s, subject %q%s. "+
 		"Tell the user out loud in one or two short sentences who it's from and why it matters, then ask if they want you "+
@@ -1149,12 +1222,23 @@ func printTiming(heardAt, requestAt, firstSentence, firstAudio time.Time) {
 	}
 }
 
+// focusOverPrompt asks for the end-of-focus digest.
+func focusOverPrompt(held []alerts.Held) string {
+	if len(held) == 0 {
+		return "[Not from the user: their focus time just ended.] Tell them in one short sentence that focus time is over " +
+			"and nothing needed them."
+	}
+	return "[Not from the user: their focus time just ended.] Tell them focus time is over, then give a short digest of " +
+		"what you held back: " + alerts.Digest(held) + ". Most important first, two or three short sentences, no lists. " +
+		"Then ask if they want you to read any of them."
+}
+
 // arrivalPrompt is the instruction for the arrival greeting. It is
 // Fritz's own observation, phrased so the model greets rather than
 // answers. Actions finished while the user was away (approved on
 // WhatsApp or the phone) are included, so Fritz can say "I sent
 // your reply to Sarah".
-func arrivalPrompt(leftAt, now time.Time, log *activity.Log) string {
+func arrivalPrompt(leftAt, now time.Time, log *activity.Log, focus *alerts.Focus) string {
 	var b strings.Builder
 	b.WriteString("[Not from the user: your camera just saw the user sit down at the desk")
 	if !leftAt.IsZero() {
@@ -1173,6 +1257,29 @@ func arrivalPrompt(leftAt, now time.Time, log *activity.Log) string {
 				b.WriteString("While they were away, you did this for them (tell them briefly): " + strings.Join(done, "; ") + ". ")
 			}
 		}
+	}
+	// Where they stopped, and what was held while they were gone:
+	// Fritz already knows these, so no slow tool calls are needed.
+	known := false
+	if p, ok := alerts.LoadProgress(focus.State); ok && !p.Recalled && now.Sub(p.At) < 12*time.Hour {
+		fmt.Fprintf(&b, "Before leaving they told you where they stopped: %q", p.Task)
+		if p.Next != "" {
+			fmt.Fprintf(&b, ", next step: %q", p.Next)
+		}
+		b.WriteString(" — remind them in one short sentence. ")
+		p.Recalled = true
+		_ = alerts.SaveProgress(focus.State, p)
+		known = true
+	}
+	if _, focused := focus.Active(); !focused {
+		if held := focus.TakeHeld(); len(held) > 0 {
+			b.WriteString("Messages you held for them: " + alerts.Digest(held) + ". Mention them in one short sentence. ")
+			known = true
+		}
+	}
+	if known {
+		b.WriteString("Don't use any tools. Keep it to two or three short sentences, no lists.")
+		return b.String()
 	}
 	b.WriteString("If you have email or calendar tools, check unread email from the last 12 hours and the calendar for the next hour, " +
 		"and mention only the single most important thing, in one sentence. If nothing stands out, just say hi. No lists.")

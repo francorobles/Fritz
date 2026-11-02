@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/francorobles/fritz/api/internal/activity"
+	"github.com/francorobles/fritz/api/internal/alerts"
+	"github.com/francorobles/fritz/api/internal/memory"
 )
 
 func TestLooksVisual(t *testing.T) {
@@ -53,7 +55,8 @@ func TestArrivalPrompt(t *testing.T) {
 	_ = log.Add(activity.Entry{At: leftAt.Add(6 * time.Minute), Source: "app", Kind: activity.KindAction, Detail: "FAILED", OK: false})
 	_ = log.Add(activity.Entry{At: leftAt.Add(7 * time.Minute), Source: "voice", Kind: activity.KindTool, Detail: "TOOL", OK: true})
 
-	got := arrivalPrompt(leftAt, time.Now(), log)
+	focus := &alerts.Focus{State: openStore(t)}
+	got := arrivalPrompt(leftAt, time.Now(), log, focus)
 	if !strings.Contains(got, "about 20 minutes away") || !strings.Contains(got, "reply to Sarah") {
 		t.Errorf("prompt = %q", got)
 	}
@@ -62,9 +65,40 @@ func TestArrivalPrompt(t *testing.T) {
 			t.Errorf("prompt includes %s: %q", unwanted, got)
 		}
 	}
-	if first := arrivalPrompt(time.Time{}, time.Now(), nil); strings.Contains(first, "away") {
+	if first := arrivalPrompt(time.Time{}, time.Now(), nil, focus); strings.Contains(first, "away") {
 		t.Errorf("first arrival should not mention time away: %q", first)
 	}
+}
+
+// TestArrivalPromptWhereWasI: coming back, Fritz reminds the user
+// where they stopped and what he held, once, without tool calls.
+func TestArrivalPromptWhereWasI(t *testing.T) {
+	st := openStore(t)
+	focus := &alerts.Focus{State: st}
+	leftAt := time.Now().Add(-10 * time.Minute)
+	_ = alerts.SaveProgress(st, alerts.Progress{Task: "the pricing section", Next: "the discount table", At: leftAt})
+	_ = focus.Hold(`Email from Dana: "Q4 update"`)
+
+	got := arrivalPrompt(leftAt, time.Now(), nil, focus)
+	for _, want := range []string{"pricing section", "discount table", "Q4 update", "Don't use any tools"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompt lacks %q: %q", want, got)
+		}
+	}
+	again := arrivalPrompt(leftAt, time.Now(), nil, focus)
+	if strings.Contains(again, "pricing") || strings.Contains(again, "Q4") {
+		t.Errorf("second arrival repeated the reminder: %q", again)
+	}
+}
+
+func openStore(t *testing.T) *memory.Store {
+	t.Helper()
+	st, err := memory.Open(filepath.Join(t.TempDir(), "fritz.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
 }
 
 // The log that motivated pendingTurn: "Hey Fritz can you check my

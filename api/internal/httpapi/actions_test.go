@@ -120,7 +120,10 @@ func TestActivityRecordsPhoneApproval(t *testing.T) {
 	if rec := actionsCall(t, h, "POST", "/actions/"+a.ID+"/approve", "tok"); rec.Code != http.StatusOK {
 		t.Fatalf("approve: %d %s", rec.Code, rec.Body)
 	}
-	rec := actionsCall(t, h, "GET", "/activity", "")
+	if rec := actionsCall(t, h, "GET", "/activity", ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("activity without the app token: status %d, want 401", rec.Code)
+	}
+	rec := actionsCall(t, h, "GET", "/activity", "tok")
 	var entries []activity.Entry
 	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil || len(entries) != 1 {
 		t.Fatalf("activity = %s (%v)", rec.Body, err)

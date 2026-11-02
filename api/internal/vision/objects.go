@@ -2,6 +2,7 @@ package vision
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -41,6 +42,9 @@ type Finder struct {
 	OnUpdate func(Sighting)
 	// Logf reports scan errors and sightings. May be nil.
 	Logf func(string)
+	// Busy, when set, skips background scans while it returns true
+	// (Fritz is answering): the reply's own calls come first.
+	Busy func() bool
 
 	mu   sync.Mutex
 	last map[string]Sighting
@@ -110,7 +114,7 @@ func (f *Finder) Find(ctx context.Context, name string) (s Sighting, found bool,
 	if name == "" {
 		return Sighting{}, false, fmt.Errorf("vision: empty object name")
 	}
-	box, ok, err := f.look(ctx, name)
+	box, ok, err := f.look(Urgent(ctx), name)
 	if err != nil {
 		return f.LastSeen(name), false, err
 	}
@@ -197,10 +201,14 @@ func (f *Finder) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 		}
+		if f.Busy != nil && f.Busy() {
+			i-- // don't skip this object, just this tick
+			continue
+		}
 		name := normalizeName(f.Watch[i%len(f.Watch)])
 		box, found, err := f.look(ctx, name)
 		if err != nil {
-			if err != ErrNoFrame && ctx.Err() == nil {
+			if !errors.Is(err, ErrNoFrame) && !errors.Is(err, ErrPaused) && ctx.Err() == nil {
 				f.logf("%v", err)
 			}
 			continue

@@ -9,9 +9,32 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// RateLimitError is HTTP 429: the API wants fewer requests. Callers
+// that poll (vision) back off together instead of retrying at once,
+// which only extends the limit.
+type RateLimitError struct {
+	Wait time.Duration // the server's Retry-After, 0 if it gave none
+	Body string
+}
+
+func (e *RateLimitError) Error() string {
+	return "meta: rate limited (HTTP 429): " + e.Body
+}
+
+// RetryAfter is how long the server asked us to wait (0: unknown).
+func (e *RateLimitError) RetryAfter() time.Duration { return e.Wait }
+
+func retryAfter(h string) time.Duration {
+	if secs, err := strconv.Atoi(strings.TrimSpace(h)); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return 0
+}
 
 // ModelSAM segments objects out of images and video by text prompt.
 const ModelSAM = "sam-3.1"
@@ -96,8 +119,10 @@ func (c *Client) segmentOnce(ctx context.Context, body []byte) (text string, ret
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		retry := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
-		return "", retry, fmt.Errorf("meta: segment HTTP %d: %s", resp.StatusCode, string(respBody))
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return "", false, &RateLimitError{Wait: retryAfter(resp.Header.Get("Retry-After")), Body: string(respBody)}
+		}
+		return "", resp.StatusCode >= 500, fmt.Errorf("meta: segment HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var out strings.Builder

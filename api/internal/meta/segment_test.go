@@ -2,6 +2,7 @@ package meta
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -99,5 +100,21 @@ func TestSegmentRetriesServerErrorOnce(t *testing.T) {
 	}
 	if stub.calls != 2 {
 		t.Errorf("calls = %d, want 2 (one retry)", stub.calls)
+	}
+}
+
+func TestSegmentRateLimitIsTypedAndNotRetried(t *testing.T) {
+	stub := &segmentStub{status: http.StatusTooManyRequests, body: `{"error":{"message":"slow down"}}`}
+	client := &Client{APIKey: "k", HTTP: &http.Client{Transport: stub}}
+	_, err := client.Segment(context.Background(), []byte("x"), "person")
+	var rl *RateLimitError
+	if !errors.As(err, &rl) {
+		t.Fatalf("err = %v, want *RateLimitError", err)
+	}
+	if stub.calls != 1 {
+		t.Errorf("calls = %d, want 1 (a 429 is not retried at once)", stub.calls)
+	}
+	if retryAfter("7") != 7*time.Second || retryAfter("") != 0 || retryAfter("Wed, 21 Oct") != 0 {
+		t.Error("retryAfter parses seconds only")
 	}
 }

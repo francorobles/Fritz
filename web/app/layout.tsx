@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Fritz",
-  description: "Fritz — Meta Global AI Hackathon Personal Assistant",
+  description: "What Fritz, your desk companion, is doing and remembers",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

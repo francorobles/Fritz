@@ -53,6 +53,19 @@ If SAM latency makes 1 Hz impossible, add a cheap local motion check first
 (frame difference on a downscaled grayscale frame) and only call SAM when
 something moved.
 
+## Rate limits (SAM HTTP 429)
+
+Every SAM caller in `voicecheck` (tracker and finder) goes through one
+`vision.Limiter`. On a 429 (`meta.RateLimitError`, never retried at
+once) all callers pause together: the server's Retry-After, else 2 s
+doubling to 30 s. During a pause background calls fail fast with
+`vision.ErrPaused` (the tracker skips the tick, and time spent blind
+doesn't count toward "user absent"); `Finder.Find` marks its call
+`vision.Urgent`, which waits out a pause of up to 8 s. Background
+watch-list scans also skip while Fritz is replying (`Finder.Busy`).
+For recordings, `scripts/run-fritz.sh --demo` keeps the watch list to
+what the demo asks for.
+
 ## Agent vision tools
 
 Exposed to `fritz-agent`:

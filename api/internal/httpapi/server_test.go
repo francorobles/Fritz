@@ -10,7 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/francorobles/fritz/api/internal/alerts"
 	"github.com/francorobles/fritz/api/internal/memory"
 	"github.com/francorobles/fritz/api/internal/meta"
 )
@@ -141,5 +143,37 @@ func TestConsolidateEndpoint(t *testing.T) {
 	rec = call(t, h, "GET", "/memories", "")
 	if mems := decode[[]memory.Memory](t, rec); len(mems) != 1 {
 		t.Errorf("memories after consolidate = %+v", mems)
+	}
+}
+
+func TestStatusEndpoint(t *testing.T) {
+	st := newStore(t)
+	focus := &alerts.Focus{State: st}
+	if _, err := focus.Start(20 * time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	_ = focus.Hold(`Email from Dana: "Q4 update"`)
+	_ = alerts.SaveProgress(st, alerts.Progress{Task: "pricing section", At: time.Now()})
+	if _, err := st.Remember(memory.KindPreference, alerts.RulePrefix+"hold project updates", "conversation", 0.95); err != nil {
+		t.Fatal(err)
+	}
+	h := NewRouter(Deps{Store: st, AppToken: "tok"})
+	if rec := call(t, h, "GET", "/status", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status without token: %d, want 401", rec.Code)
+	}
+	if rec := call(t, h, "GET", "/memories", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("memories without token: %d, want 401", rec.Code)
+	}
+	if rec := call(t, h, "GET", "/healthz", ""); rec.Code != http.StatusOK {
+		t.Fatalf("healthz must stay open: %d", rec.Code)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/status", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	got := decode[statusResponse](t, rec)
+	if !got.Focus.On || len(got.Held) != 1 || got.Progress == nil || got.Progress.Task != "pricing section" ||
+		len(got.Rules) != 1 || got.Rules[0] != "hold project updates" || got.Sentry.On {
+		t.Errorf("status = %+v", got)
 	}
 }

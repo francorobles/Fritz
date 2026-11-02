@@ -41,15 +41,25 @@ func NewRouter(d Deps) http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	r.Route("/memories", func(r chi.Router) {
+	// Personal data (memories, conversation, activity, status) needs
+	// the app token when one is configured: a Tailscale Funnel
+	// pointed at the whole port would otherwise publish it. The
+	// dashboard's server-side proxy adds the token. Without a token
+	// (local development) these stay open.
+	private := r.With()
+	if d.AppToken != "" {
+		private = r.With(appAuth(d.AppToken))
+	}
+	private.Route("/memories", func(r chi.Router) {
 		r.Use(middleware.Timeout(30 * time.Second))
 		r.Get("/", h.listMemories)
 		r.Post("/", h.createMemory)
 		r.Patch("/{id}", h.updateMemory)
 		r.Delete("/{id}", h.deleteMemory)
 	})
-	r.With(middleware.Timeout(30*time.Second)).Get("/turns", h.listTurns)
-	r.With(middleware.Timeout(30*time.Second)).Get("/activity", h.listActivity)
+	private.With(middleware.Timeout(30*time.Second)).Get("/turns", h.listTurns)
+	private.With(middleware.Timeout(30*time.Second)).Get("/activity", h.listActivity)
+	private.With(middleware.Timeout(30*time.Second)).Get("/status", h.status)
 	r.With(middleware.Timeout(30*time.Second)).Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "fritz-api"})
 	})
@@ -58,7 +68,7 @@ func NewRouter(d Deps) http.Handler {
 	})
 	// Consolidation calls Muse Wonder, which thinks slowly —
 	// it gets minutes, not the dashboard's 30 s.
-	r.With(middleware.Timeout(10*time.Minute)).Post("/memory/consolidate", h.consolidate)
+	private.With(middleware.Timeout(10*time.Minute)).Post("/memory/consolidate", h.consolidate)
 	// WhatsApp webhooks: Meta expects fast ACKs and handles its
 	// own retries, so no dashboard timeout here. Reachable only
 	// if you expose it (Tailscale Funnel / tunnel) — the handler

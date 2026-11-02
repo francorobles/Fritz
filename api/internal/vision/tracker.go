@@ -2,6 +2,7 @@ package vision
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -115,6 +116,7 @@ func (t *Tracker) Run(ctx context.Context) {
 	var (
 		hits     int       // consecutive sightings
 		lastHit  time.Time // last successful sighting
+		blindAt  time.Time // first failed call of a failing spell
 		sx, sy   float64   // smoothed gaze (guarded by gmu: the
 		smoothed bool      // refresher below reads it)
 		gmu      sync.Mutex
@@ -142,8 +144,21 @@ func (t *Tracker) Run(ctx context.Context) {
 		}
 		raw, err := t.seg.Segment(ctx, small, t.cfg.Prompt)
 		if err != nil {
-			t.logf("vision: segment %q: %v", t.cfg.Prompt, err)
+			if blindAt.IsZero() {
+				blindAt = time.Now()
+			}
+			if !errors.Is(err, ErrPaused) { // the Limiter logs pauses once
+				t.logf("vision: segment %q: %v", t.cfg.Prompt, err)
+			}
 			return
+		}
+		if !blindAt.IsZero() {
+			// Time spent unable to look (rate limit, network) is not
+			// evidence the user left: shift the absence clock past it.
+			if !lastHit.IsZero() {
+				lastHit = lastHit.Add(time.Since(blindAt))
+			}
+			blindAt = time.Time{}
 		}
 		if t.cfg.DebugLog {
 			t.logf("vision: sam %q -> %s", t.cfg.Prompt, raw)

@@ -1,25 +1,309 @@
 :root {
   color-scheme: light dark;
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --text: #1b1d21;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --accent: #2563eb;
+  --focus: #7c3aed;
+  --sentry: #dc2626;
+  --spark: #2563eb;
+  --sam: #0d9488;
+  --transcribe: #d97706;
+  --wonder: #9333ea;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1013;
+    --card: #171a1f;
+    --text: #e8eaed;
+    --muted: #9aa0a8;
+    --line: #262a31;
+    --accent: #60a5fa;
+    --focus: #a78bfa;
+    --sentry: #f87171;
+    --spark: #60a5fa;
+    --sam: #2dd4bf;
+    --transcribe: #fbbf24;
+    --wonder: #c084fc;
+  }
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 main {
-  max-width: 44rem;
+  max-width: 64rem;
   margin: 0 auto;
-  padding: 3rem 1.25rem;
+  padding: 2rem 1rem 3rem;
 }
 
 h1 {
-  font-size: 2.5rem;
+  font-size: 1.75rem;
+  margin: 0;
+}
+
+h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
   margin: 0 0 0.75rem;
 }
 
-code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.9em;
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.brand {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.sub {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* Fritz's eyes, as on the desk screen. */
+.eyes {
+  display: flex;
+  gap: 6px;
+  background: #000;
+  padding: 10px 9px;
+  border-radius: 14px;
+}
+
+.eyes span {
+  width: 16px;
+  height: 22px;
+  border-radius: 50%;
+  background: #4fd8ff;
+  box-shadow: 0 0 8px #4fd8ff;
+  animation: blink 5s infinite;
+}
+
+@keyframes blink {
+  0%, 94%, 100% { transform: scaleY(1); }
+  97% { transform: scaleY(0.1); }
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pill {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.pill.on {
+  color: #fff;
+  border-color: transparent;
+}
+
+.pill.focus {
+  background: var(--focus);
+}
+
+.pill.sentry {
+  background: var(--sentry);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+
+.grid .card {
+  margin-bottom: 0;
+}
+
+.big {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 0;
+}
+
+.error {
+  background: color-mix(in srgb, var(--sentry) 15%, transparent);
+  border: 1px solid var(--sentry);
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+}
+
+.list,
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list li {
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.list li:first-child {
+  border-top: 0;
+}
+
+.row {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.row button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.row button:hover {
+  color: var(--sentry);
+}
+
+.time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin-right: 0.6rem;
+  white-space: nowrap;
+}
+
+.feed li {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr auto;
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--line);
+  align-items: start;
+}
+
+.feed li:first-child {
+  border-top: 0;
+}
+
+.feed li.failed strong {
+  color: var(--sentry);
+}
+
+.what {
+  min-width: 0;
+}
+
+.via {
+  color: var(--muted);
+}
+
+.bad {
+  color: var(--sentry);
+}
+
+.detail {
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: flex-end;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  margin-left: 0.4rem;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+}
+
+.badges .badge {
+  margin-left: 0;
+}
+
+.badge.spark { --c: var(--spark); }
+.badge.sam { --c: var(--sam); }
+.badge.transcribe { --c: var(--transcribe); }
+.badge.wonder { --c: var(--wonder); }
+
+.kind {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-right: 0.3rem;
+}
+
+footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+footer .badge {
+  margin-left: 0;
+}
+
+@media (max-width: 40rem) {
+  .feed li {
+    grid-template-columns: 1fr;
+  }
+  .badges {
+    justify-content: flex-start;
+  }
 }
