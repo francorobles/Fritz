@@ -47,55 +47,62 @@ photo" on its own; no "you seem stressed" features.
    self-updating memory.
 4. **Demo quality** — physical device, real data, no dead air.
 
-## Scope (in priority order — finish one before the next)
+## Scope (status Nov 2 — feature-complete; no new features)
 
-1. Face protocol + voice loop end to end (talk → reply → eyes react)
-2. Gmail + Calendar tools with spoken confirmation
-3. Camera presence + eyes following the user
-4. `find_object` ("where are my keys?") and `look`
-5. Memory + web dashboard + Muse Wonder consolidation
-6. Proactive greeting on arrival
-7. Away mode over **WhatsApp** (decided Nov 1, replaces the Android app
-   for the demo): pending actions and urgent mail reach the user on
-   WhatsApp, a "yes" there approves (`fritz-integrations`). The Android
-   app (`fritz-mobile`) only if everything else is done.
-8. Anything else (Muse Image, social media, Glimmer) — only if 1–7 are solid
+1. Face protocol + voice loop end to end ✅
+2. Gmail + Calendar tools with spoken confirmation ✅
+3. Camera presence + eyes following the user ✅ (SAM rate-limit back-off ✅)
+4. `find_object` ("where are my keys?") ✅ and visual questions (live
+   frame attached to the Spark turn) ✅
+5. Memory + web dashboard + Muse Wonder consolidation ✅
+6. Proactive greeting on arrival ✅
+7. Away mode over **WhatsApp** ✅ (replaces the Android app): important
+   mail and sentry photos reach the user; replies run the same tools; a
+   "yes" there approves.
+8. Focus mode, interruption rules, "where was I" ✅ (Nov 2) — the core of
+   story A. Measured with `api/cmd/triageeval`.
 
+Not in the demo: the Android app and FCM pushes (`fritz-mobile`,
+scaffold only), the servo head (parked), Facebook comments, aircon.
 Out of scope: `ios/`. Muse Gadgets is not an option — the Muse app isn't
-available in the Philippines; the Android app replaces it.
+available in the Philippines.
 
-## Plan to the deadline (set Nov 1)
+## Plan to the deadline
 
-- Nov 1: email reply + send ✅, activity log ✅, start WhatsApp Business
-  setup (user; template approval takes time).
-- Nov 2: `find_object` + last-seen memory for keys/wallet/glasses ✅,
-  proactive greeting on arrival ✅ (built Nov 1, needs a Pi test).
-- Nov 3: WhatsApp away mode (pending action → WhatsApp), simple web
-  dashboard (memories + activity), README.
-- Nov 4: rehearse and record; submit with buffer before 9 PM ET.
-- Open decision: the impact story — (A) the builder's overnight
-  cross-timezone email, or (B) a companion for parents living alone,
-  connected to family abroad.
+- Nov 2: build done (focus features, dashboard, preflight, `--demo`,
+  fast confirmations, README) ✅. Not yet run on the Pi.
+- Nov 3: practice on the Pi (preflight, three full rehearsals), run
+  `triageeval -runs 3` and put the score in the README, fix only what the
+  logs show, **record a complete backup take**.
+- Nov 4: final takes, edit, secret scan, make the repo public (check in a
+  private window), submit with buffer before 9 PM ET.
+- Story: **A, decided** — the builder's overnight cross-timezone email
+  (London, Toronto, Tokyo) and getting interrupted while heads-down.
 
-## Demo video (aim for 2–3 min)
+## Demo video (2:50–3:00, story A)
 
-1. **Hook (15 s):** the problem, told by the builder, in one sentence.
-2. **Arrival (20 s):** walk to the desk; Fritz's eyes find you; it greets you
-   with the one email that matters.
-3. **Action (40 s):** "Fritz, reply that Thursday works." Draft read back →
-   "send it" → happy eyes. Show the sent email.
-4. **Vision (25 s):** "Fritz, where are my keys?" Eyes turn to the keys.
-5. **Away (25 s):** walk off; eyes go to standby; an urgent email arrives;
-   Fritz messages you on WhatsApp ("Sarah asked if Thursday works — reply
-   yes?"); you answer "yes". Walk back: "Welcome back — I sent your reply
-   to Sarah."
-6. **Memory (20 s):** dashboard shows what Fritz learned; delete one live.
-7. **How it works (25 s):** architecture diagram labelled with each Meta
-   model.
-8. **Close (10 s).**
+1. **Hook (0:00):** builder to camera: colleagues in London, Toronto and
+   Tokyo; one email matters, the rest interrupts. "So I built Fritz."
+2. **Arrival (0:15):** eyes find you; greeting names Sarah's overnight
+   email (cut the wait — the slowest turn).
+3. **Reply by voice (0:40):** "tell Sarah Thursday works" → fixed
+   question → "yes" → sent. Leave uncut: the one place real latency shows.
+4. **Focus (1:05):** "focus for 30 minutes, hold project updates unless
+   there's a deadline" → a project update is held (dashboard shows it) →
+   an urgent email interrupts.
+5. **Keys (1:45):** eyes turn to the keys.
+6. **Away and back (2:00):** "I'm stopping at the pricing section" → walk
+   out → WhatsApp alert → reply "approved" → "yes" → walk back → greeting
+   with where you stopped, the sent reply, the held update.
+7. **Dashboard (2:30):** rule, activity with model badges, a Wonder
+   memory deleted live.
+8. **How it works + close (2:45):** diagram with Muse Spark, Voice
+   Transcribe, SAM 3.1, Muse Wonder, and Muse Code (built it, running
+   Muse Wonder, alongside Claude Code); the triageeval score.
 
-Record several takes, cut the waiting, and keep real latency visible at
-least once so it's clearly not faked.
+Staged emails E1–E4, reset commands and fallbacks live on the user's
+practice page. Record scene by scene, cut the waiting, keep one real-time
+exchange.
 
 ## Submission checklist
 
@@ -106,3 +113,6 @@ least once so it's clearly not faked.
 - Demo video link.
 - No secrets in git history: `git log -p | grep -iE "api[_-]?key|token|secret"`
   before making the final push.
+  (A full pattern scan on Nov 2 found nothing; re-run before going public.)
+- The triageeval score in the README (the placeholder comment under
+  "Measuring the interruption decisions").

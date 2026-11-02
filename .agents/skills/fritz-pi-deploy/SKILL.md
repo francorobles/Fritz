@@ -1,18 +1,42 @@
 ---
 name: fritz-pi-deploy
 description: >
-  Building and running Fritz on the Raspberry Pi 4B: cross-compiling the Go
+  Building and running Fritz on the Raspberry Pi 5: cross-compiling the Go
   brain for arm64, building the C++ face, systemd services, camera/audio/display
   device access, secrets, and on-device troubleshooting. Use when deploying to
   the Pi, writing systemd units or Docker config, setting up the camera, mic or
   speaker, or when something works on the desktop but not on the Pi.
 ---
 
-# Deploying Fritz to the Pi 4B
+# Deploying Fritz to the Pi 5
 
 Target: 64-bit Raspberry Pi OS (Bookworm or newer) with the desktop and
-auto-login, Pi 4B, HDMI display, **Logitech C922 USB webcam** (camera + mic)
-and an **Echo Dot Bluetooth speaker**. Hardware specifics: `fritz-c922`.
+auto-login, Pi 5 (no 3.5 mm audio jack: the fallback speaker is USB),
+3.5" display, **Logitech C922 USB webcam** (camera + mic) and an **Echo Dot
+Bluetooth speaker**. Hardware specifics: `fritz-c922`.
+
+## How Fritz runs today (use this)
+
+`scripts/run-fritz.sh` (as the desktop login user, never sudo) does it all:
+stops old loops, rebuilds and installs the face if it changed, restarts
+`fritz-face.service`, starts `bin/fritz-server` in the background (log:
+`~/.cache/fritz/server.log`) and runs `bin/voicecheck` (voice, camera,
+watchers) in the foreground. Both Go processes share `FRITZ_DB`
+(default `api/fritz.db`). Flags: `--pull`, `--no-build`, `--no-server`,
+`--demo` (recording timings: greet after 15 s away, mail every 20 s,
+watch list from `FRITZ_DEMO_OBJECTS`, default keys).
+
+Before every recording: `scripts/preflight.sh` — hardware
+(`check-hardware.sh`), the face service, the Meta key (one tiny Spark
+call via `mailcheck -spark`), Gmail/Calendar/WhatsApp, the API server,
+and the Funnel (webhook reachable, `/turns` NOT reachable).
+
+Dashboard: `cd web && npm ci && npm run build && FRITZ_APP_TOKEN=... npm start`
+(port 3000; `FRITZ_API_URL` if the API isn't local). Tailnet or LAN
+only, never through Funnel.
+
+The `fritz.service` sketch below is the eventual autostart shape; it
+isn't installed yet.
 
 ## Two processes, run natively with systemd
 
@@ -64,6 +88,7 @@ is used) — the default Pi user already has them.
 
 ```
 MODEL_API_KEY=...
+FRITZ_APP_TOKEN=<openssl rand -hex 24>   # guards /memories, /turns, /activity, /status, /actions
 FRITZ_TZ=<IANA timezone, e.g. Asia/Singapore>
 FRITZ_CONFIG_DIR=/var/lib/fritz
 FRITZ_MIC=pipewire
@@ -105,7 +130,7 @@ directly; see `iot/README.md`.
 
 Logs: `journalctl -u fritz -f`.
 
-## Performance on a Pi 4
+## Performance on the Pi
 
 - Everything heavy is remote (Meta Model API) or small (Piper, SDL).
 - Camera: MJPEG passthrough (`-c:v copy`) at 1280×720 @ 10 fps costs
@@ -115,7 +140,12 @@ Logs: `journalctl -u fritz -f`.
 
 ## Demo-day checklist
 
+- `scripts/preflight.sh` all green before every take.
+- Tailscale Funnel exposes only `/webhooks/whatsapp`
+  (`tailscale funnel --bg --set-path /webhooks/whatsapp http://127.0.0.1:8080/webhooks/whatsapp`),
+  never the whole port.
 - Wi-Fi fallback: phone hotspot pre-configured in NetworkManager.
+- Speaker fallback: a USB speaker (the Pi 5 has no headphone jack).
 - `systemctl is-active fritz fritz-face` both active after a cold boot.
 - API key quota checked; Google token not expired (testing-mode tokens
   expire after 7 days — re-run `googleauth` the day before recording).

@@ -1,36 +1,42 @@
 # Fritz — project instructions for coding agents
 
 Fritz is a desk companion for the Meta Global AI Hackathon (submission
-deadline **Nov 4, 2026, 9 PM ET**). It runs on a Raspberry Pi 4B with a
+deadline **Nov 4, 2026, 9 PM ET**). It runs on a Raspberry Pi 5 with a
 display (animated EVE-style eyes), a Logitech C922 USB webcam (camera and
 microphone), and an Echo Dot as a Bluetooth speaker. You talk to it by voice; it sees you, follows you with its eyes,
-reads your email and calendar, and remembers your routines.
+reads your email and calendar, guards your focus (holds what can wait,
+interrupts for what can't), remembers your routines, and reaches you on
+WhatsApp when you're away.
 
 ## Architecture (decided — don't redesign)
 
 ```
-            Raspberry Pi 4B
+            Raspberry Pi 5
  ┌──────────────────────────────────────────────────────┐
  │ iot/  fritz_iot (C++/SDL2)   ◄── UDP 127.0.0.1:7070 ──┤ face commands
  │       fullscreen eyes                                 │
  │                                                       │
- │ api/  fritz (Go)  ── the brain                        │
+ │ api/  voicecheck (Go) ── the brain, + fritz-server    │
  │   C922 mic      → Muse Voice Transcribe (realtime WS) │
  │   agent loop    → Muse Spark 1.3 tool calling         │
  │   C922 camera (ffmpeg) → SAM 3.1 / Muse Spark vision  │
  │   speech out    → Piper TTS (local) → Echo Dot (BT)   │
  │   Gmail + Calendar, memory store (SQLite)             │
- │   HTTP :8080 for web/ and android/                    │
- │   FCM pushes to the phone when the user is away       │
+ │   alerts: mail triage, focus mode, sentry             │
+ │   HTTP :8080 (fritz-server) for web/ + WhatsApp hook  │
  └──────────────────────────────────────────────────────┘
- web/      Next.js dashboard: what Fritz remembers, activity log
- android/  Kotlin companion: push alerts, Approve/Decline, push-to-talk
-           (reaches the Pi over Tailscale HTTPS)
+ web/      Next.js dashboard: focus, held messages, rules, activity
+           (with Meta model badges), memories
+ WhatsApp  away channel: alerts out, replies in (webhook via Tailscale
+           Funnel, webhook path only)
+ android/  Kotlin companion — scaffold only, not in the demo
 ```
 
 - `ios/` is out of scope for the hackathon. Don't touch it.
 - The Muse app isn't available in the Philippines, so Muse Gadgets isn't
-  used; the Android app is Fritz's link to the user away from the desk.
+  used; WhatsApp is Fritz's link to the user away from the desk.
+- Run on the Pi with `scripts/run-fritz.sh` (`--demo` for recordings);
+  check with `scripts/preflight.sh` (`fritz-pi-deploy`).
 - All Meta Model API calls happen in Go (`api/`). The C++ face never calls
   the network; it only obeys face commands.
 

@@ -18,18 +18,25 @@ side is in `fritz-mobile`.
 
 ## API contract
 
+Status (Nov 2): built are `/actions/*` (pending, approve, decline),
+`/activity`, and a dashboard `GET /status`; `api/internal/mobile`, FCM
+pushes, `/mobile/*` and `/voice/turn` are **not built**, and the Android
+app is still a scaffold. WhatsApp is the away channel for the demo
+(`fritz-integrations`). The table below is the plan; where it disagrees
+with the code, the code wins.
+
 All routes require `Authorization: Bearer $FRITZ_APP_TOKEN` (compare with
 `crypto/subtle.ConstantTimeCompare`; 401 otherwise). JSON in/out, snake_case.
 
 | Method & path | Body → Response |
 |---|---|
-| `GET /status` | → `{"present":bool,"last_seen":"RFC3339","emotion":"normal"}` |
+| `GET /status` | Built for the dashboard (`httpapi/status.go`): `{"focus":{"on","until"},"held":[…],"progress":{…},"sentry":{"on","since"},"rules":[…]}`. The phone's presence fields would be added here, not as a second route |
 | `POST /mobile/register` | `{"fcm_token":"..."}` → `204` |
 | `POST /mobile/test-push` | → `204`, sends a test alert |
 | `GET /actions/pending` | → `[{"id","summary","kind","created_at","expires_at"}]` |
 | `POST /actions/{id}/approve` | → `{"id","status":"executed","result":"Sent to Sarah"}` |
 | `POST /actions/{id}/decline` | → `{"id","status":"declined"}` |
-| `GET /activity?limit=50` | → `[{"id","at","source","kind","name","detail","ok"}]` (built; same log as the web dashboard; currently unauthenticated like `/memories`) |
+| `GET /activity?limit=50` | → `[{"id","at","source","kind","name","detail","ok"}]` (built; same log as the web dashboard). Needs the app token when `FRITZ_APP_TOKEN` is set, like `/memories`, `/turns`, `/status` and `/memory/consolidate` |
 | `POST /voice/turn` | multipart `audio` (WAV 16 kHz mono s16) → `{"transcript","reply"}` |
 
 Errors: `{"error":"message"}` with a proper status (`404` unknown action,
@@ -118,7 +125,9 @@ The phone must reach the Pi from anywhere without port forwarding.
 3. Put that URL in the app's Settings.
 
 The API is then only reachable inside the tailnet; the app token is a second
-layer, not the only one. Never expose port 8080 to the public internet.
+layer, not the only one. Never expose port 8080 to the public internet:
+`tailscale serve` (tailnet) is fine, but `tailscale funnel` (public) must
+be limited to `/webhooks/whatsapp` with `--set-path`.
 
 ## Testing
 

@@ -71,16 +71,14 @@ turn text (from voice or web)
 | `email_reply(account, id, body)` | agent/reply.go | Built. **Needs confirmation**: summary names the recipient and quotes the body; sends in-thread on yes (Gmail only — `integrations.MailReplier`) |
 | `calendar_list(from, to)` | agent/calendar.go | Built |
 | `calendar_create(title, start, end)` | agent/calendar.go | Built. **Needs confirmation** |
-| `look(question)` | vision | Camera frame + Muse Spark |
+| `look(question)` | — | Not a tool: `voicecheck` attaches the live frame to the user message when `looksVisual(request)` matches ("what am I holding?"), and Spark answers from the photo |
 | `find_object(name)` | agent/vision.go | Built. SAM 3.1 live; eyes turn to it for 4 s; otherwise last-seen place/time from the watch-list memory |
 | `sentry_mode(on)` | agent/sentry.go | Built. Flag in the shared DB (`alerts.KeySentry`); voice (needs camera + WhatsApp) and WhatsApp. Turning it off by voice also WhatsApps the owner |
 | `focus_mode(action, minutes)` | agent/focus.go | Built. start/stop/status; `alerts.Focus` (`focus_until`, held queue in the shared DB). stop/status return the held messages |
 | `interruption_rule(rule)` | agent/focus.go | Built. Stored as a `preference` memory prefixed `alerts.RulePrefix` (dashboard-visible, deletable); the mail judge reads rules at every check |
 | `save_progress(task, next)` / `where_was_i()` | agent/focus.go | Built. `alerts.Progress` in the shared DB; the arrival greeting mentions it once |
-| `set_face(emotion)` | face | |
-| `remember(fact, kind)` | memory | kind: `routine`, `preference`, `person`, `task` |
-| `recall(query)` | memory | |
-| `forget(id)` | memory | |
+| `set_face(emotion)` | face | Not built: `voicecheck` sets emotions itself (thinking during tools, happy when speaking) |
+| `remember` / `recall` / `forget` | memory | Not built as tools: memories come from Wonder consolidation, `interruption_rule`, and the dashboard (`DELETE /memories/{id}`) |
 
 Each tool: a Go func with a typed args struct, a JSON schema generated next
 to it, and a unit test with a fake backend.
@@ -104,7 +102,9 @@ tool calls go to the activity log with source `whatsapp`.
 
 Tools marked **Needs confirmation** don't execute. They return
 `{"status":"needs_confirmation","summary":"Send reply to Sarah: 'Thursday works'"}`
-and store a pending action. Fritz reads the summary aloud. The pending action
+and store a pending action. Fritz asks the tool's fixed `spoken` question
+("Should I reply to Sarah: Thursday works? Just say yes…") without a
+second model round. The pending action
 runs only if the **user's next turn** is a clear yes ("yes", "send it", "do
 it"), checked by Go code, not by the model, **or** the user taps Approve in
 the Android app. A spoken non-yes cancels it. The model cannot bypass this by
@@ -125,8 +125,10 @@ calling the tool again. Pending actions live in the shared store described in
   activity log + current memories to `muse-wonder-1.0` asking for a JSON
   diff (add/update/remove) using structured output
   (https://dev.meta.ai/docs/structured-output.md). Apply it and log it.
-- The web dashboard lists every memory with edit/delete. Expose
-  `GET/PATCH/DELETE /memories` on the API.
+- The web dashboard (`web/`) lists every memory with delete (PATCH exists
+  on the API, not in the UI). `GET/PATCH/DELETE /memories` need the app
+  token when `FRITZ_APP_TOKEN` is set; the dashboard's server-side proxy
+  (`web/app/api/fritz/[...path]/route.ts`) adds it.
 
 ## Proactive behavior
 
