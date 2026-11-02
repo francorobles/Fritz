@@ -160,3 +160,9 @@ Built (alerts, `internal/alerts`, run by `voicecheck`):
   interruption" prompt. When the arrival greeting already has progress
   or held messages to say, it skips the slow email/calendar tool calls.
   Dry-run rules on real mail: `go run ./cmd/mailcheck -triage -rule "..."`.
+  "Urgent" is judged against the real focus end (`MailWatcher.FocusEnds`),
+  else one hour. Held messages and the progress reminder are cleared only
+  after the reply was delivered (`respond` returns whether it was spoken;
+  `Focus.Forget` removes exactly what was told), so a failed reply loses
+  nothing. Quality is measured with `go run ./cmd/triageeval -runs 3`
+  (18 labelled emails in `cmd/triageeval/interruptions.json`).

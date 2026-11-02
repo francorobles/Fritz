@@ -56,7 +56,7 @@ func TestArrivalPrompt(t *testing.T) {
 	_ = log.Add(activity.Entry{At: leftAt.Add(7 * time.Minute), Source: "voice", Kind: activity.KindTool, Detail: "TOOL", OK: true})
 
 	focus := &alerts.Focus{State: openStore(t)}
-	got := arrivalPrompt(leftAt, time.Now(), log, focus)
+	got, _ := arrivalPrompt(leftAt, time.Now(), log, focus)
 	if !strings.Contains(got, "about 20 minutes away") || !strings.Contains(got, "reply to Sarah") {
 		t.Errorf("prompt = %q", got)
 	}
@@ -65,7 +65,7 @@ func TestArrivalPrompt(t *testing.T) {
 			t.Errorf("prompt includes %s: %q", unwanted, got)
 		}
 	}
-	if first := arrivalPrompt(time.Time{}, time.Now(), nil, focus); strings.Contains(first, "away") {
+	if first, _ := arrivalPrompt(time.Time{}, time.Now(), nil, focus); strings.Contains(first, "away") {
 		t.Errorf("first arrival should not mention time away: %q", first)
 	}
 }
@@ -79,13 +79,20 @@ func TestArrivalPromptWhereWasI(t *testing.T) {
 	_ = alerts.SaveProgress(st, alerts.Progress{Task: "the pricing section", Next: "the discount table", At: leftAt})
 	_ = focus.Hold(`Email from Dana: "Q4 update"`)
 
-	got := arrivalPrompt(leftAt, time.Now(), nil, focus)
+	got, announced := arrivalPrompt(leftAt, time.Now(), nil, focus)
 	for _, want := range []string{"pricing section", "discount table", "Q4 update", "Don't use any tools"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt lacks %q: %q", want, got)
 		}
 	}
-	again := arrivalPrompt(leftAt, time.Now(), nil, focus)
+	// The greeting failed (announced not called): nothing is lost.
+	retry, announced := arrivalPrompt(leftAt, time.Now(), nil, focus)
+	if !strings.Contains(retry, "pricing section") || !strings.Contains(retry, "Q4 update") {
+		t.Fatalf("a failed greeting lost the reminder: %q", retry)
+	}
+	// Delivered: told once, not repeated.
+	announced()
+	again, _ := arrivalPrompt(leftAt, time.Now(), nil, focus)
 	if strings.Contains(again, "pricing") || strings.Contains(again, "Q4") {
 		t.Errorf("second arrival repeated the reminder: %q", again)
 	}

@@ -379,3 +379,46 @@ func TestProgressRoundTrip(t *testing.T) {
 		t.Errorf("progress = %+v, %v", p, ok)
 	}
 }
+
+func TestForgetKeepsWhatArrivedSince(t *testing.T) {
+	st := openStore(t)
+	f := &Focus{State: st}
+	_ = f.Hold("first")
+	told := f.Held() // the digest being spoken
+	_ = f.Hold("second")
+	f.Forget(told)
+	if left := f.Held(); len(left) != 1 || left[0].Text != "second" {
+		t.Errorf("held after forget = %+v, want only the newer message", left)
+	}
+	f.Forget(f.Held())
+	if len(f.Held()) != 0 {
+		t.Error("queue not empty")
+	}
+}
+
+func TestUrgencyFollowsFocusEnd(t *testing.T) {
+	st := openStore(t)
+	box := &fakeBox{name: "gmail", list: []integrations.Summary{{Account: "gmail", ID: "a", Subject: "Hi", Date: time.Now(), Unread: true}}}
+	var system string
+	end := time.Now().Add(45 * time.Minute)
+	w := &MailWatcher{Boxes: []integrations.Mailbox{box}, Seen: st,
+		FocusEnds: func() time.Time { return end },
+		Judge: judgeFunc(func(msgs []meta.Message) (string, error) {
+			system = msgs[0].Content
+			return `{"important":[]}`, nil
+		})}
+	if err := w.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := "can't wait until " + end.Format("3:04 PM") + ", when the user's focus session ends"
+	if !strings.Contains(system, want) || !strings.Contains(system, "It is now ") {
+		t.Errorf("judge prompt lacks the focus horizon %q:\n%s", want, system)
+	}
+	// Not focusing: the default one-hour horizon.
+	w.FocusEnds = func() time.Time { return time.Time{} }
+	box.list[0].ID = "b"
+	_ = w.Check(context.Background())
+	if !strings.Contains(system, "can't wait an hour") {
+		t.Errorf("no default horizon:\n%s", system)
+	}
+}

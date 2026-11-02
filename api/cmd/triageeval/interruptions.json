@@ -1,0 +1,32 @@
+{
+  "scenario": "The user started a 30-minute focus session and set one interruption rule. Each email arrived during the session.",
+  "focus_minutes": 30,
+  "rules": ["hold project updates unless there's a deadline"],
+  "about": [
+    "Maria Santos is the user's manager",
+    "Dana Cruz is the user's project manager",
+    "The user's mother is Elena"
+  ],
+  "emails": [
+    {"id": "bank-fail", "from": "BPI Alerts <alerts@bpi.example>", "subject": "Payment failed: your card was declined", "snippet": "Your auto-debit for your internet bill failed. Service will be suspended today unless you update your payment.", "expect": "interrupt"},
+    {"id": "manager-contract", "from": "Maria Santos <maria@company.example>", "subject": "Need the signed contract in 20 minutes", "snippet": "The client call starts in 20 minutes and legal needs the signed contract before it. Can you send it now?", "expect": "interrupt"},
+    {"id": "security-signin", "from": "Google <no-reply@accounts.google.example>", "subject": "Security alert: new sign-in from an unknown device", "snippet": "Someone just signed in to your account from a new Windows device in another country. If this wasn't you, secure your account now.", "expect": "interrupt"},
+    {"id": "project-deadline-now", "from": "Dana Cruz <dana@company.example>", "subject": "Project update: launch moved up, sign-off needed in 15 minutes", "snippet": "Launch moved to today. I need your sign-off on the release notes in the next 15 minutes or we miss the window.", "expect": "interrupt"},
+    {"id": "family", "from": "Elena <elena.home@mail.example>", "subject": "Call me as soon as you can", "snippet": "Please call me as soon as you see this, it's about your dad. He's okay but I need to talk.", "expect": "interrupt"},
+
+    {"id": "weekly-update", "from": "Dana Cruz <dana@company.example>", "subject": "Weekly project update", "snippet": "Here's where we are this week: design done, backend 70%, QA starts Monday. No action needed.", "expect": "hold"},
+    {"id": "sprint-status", "from": "Jira <jira@company.example>", "subject": "Sprint 14 status update", "snippet": "Sprint 14 progress: 18 of 24 issues done. Burndown attached.", "expect": "hold"},
+    {"id": "project-deadline-friday", "from": "Dana Cruz <dana@company.example>", "subject": "Project update: new timeline, sign-off by Friday", "snippet": "The timeline changed. Please review and sign off on the new plan by Friday.", "expect": "hold"},
+    {"id": "client-invoice", "from": "Ramon Reyes <ramon@client.example>", "subject": "Question about invoice #1042", "snippet": "Hi! Quick question about one line item on the last invoice, whenever you get a chance this week.", "expect": "hold"},
+    {"id": "manager-plan", "from": "Maria Santos <maria@company.example>", "subject": "Q1 plan — your thoughts?", "snippet": "When you have time this week, could you look at the Q1 plan draft and send me your thoughts?", "expect": "hold"},
+    {"id": "accountant", "from": "Liza Tan CPA <liza@tanaccounting.example>", "subject": "Documents needed for your tax filing next week", "snippet": "Please send your receipts and the 2316 form before next Wednesday so I can file on time.", "expect": "hold"},
+    {"id": "landlord", "from": "Mr. Villanueva <landlord@mail.example>", "subject": "Rent reminder", "snippet": "Friendly reminder that rent is due on the 5th. Thank you!", "expect": "hold"},
+
+    {"id": "newsletter", "from": "The Batch <newsletter@deeplearning.example>", "subject": "This week in AI", "snippet": "New models, a robotics breakthrough, and our pick of papers this week.", "expect": "ignore"},
+    {"id": "sale", "from": "Shopee <promo@shopee.example>", "subject": "11.11 flash sale starts now!", "snippet": "Up to 90% off. Free shipping vouchers inside.", "expect": "ignore"},
+    {"id": "receipt", "from": "Grab <receipts@grab.example>", "subject": "Your Grab receipt", "snippet": "Thanks for riding with Grab. Total paid: PHP 245.00.", "expect": "ignore"},
+    {"id": "dependabot", "from": "GitHub <notifications@github.example>", "subject": "[fritz] Bump lodash from 4.17.20 to 4.17.21", "snippet": "Dependabot opened a pull request to bump lodash.", "expect": "ignore"},
+    {"id": "linkedin", "from": "LinkedIn <notifications@linkedin.example>", "subject": "You appeared in 12 searches this week", "snippet": "See who's looking at your profile.", "expect": "ignore"},
+    {"id": "spotify", "from": "Spotify <no-reply@spotify.example>", "subject": "Your Discover Weekly is ready", "snippet": "30 new songs picked for you.", "expect": "ignore"}
+  ]
+}

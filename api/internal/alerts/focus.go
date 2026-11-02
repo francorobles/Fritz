@@ -110,6 +110,38 @@ func (f *Focus) TakeHeld() []Held {
 	return held
 }
 
+// Forget removes the given messages once they were told (a digest
+// that was actually spoken). Anything held since stays queued.
+func (f *Focus) Forget(told []Held) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Keyed by instant + text: decoded times can differ in
+	// location while naming the same moment.
+	type key struct {
+		at   int64
+		text string
+	}
+	done := make(map[key]bool, len(told))
+	for _, h := range told {
+		done[key{h.At.UnixNano(), h.Text}] = true
+	}
+	var keep []Held
+	for _, h := range f.held() {
+		if !done[key{h.At.UnixNano(), h.Text}] {
+			keep = append(keep, h)
+		}
+	}
+	if len(keep) == len(f.held()) {
+		return
+	}
+	value := ""
+	if len(keep) > 0 {
+		data, _ := json.Marshal(keep)
+		value = string(data)
+	}
+	_ = f.State.SetState(KeyHeld, value)
+}
+
 func (f *Focus) held() []Held {
 	v, _, ok, err := f.State.State(KeyHeld)
 	if err != nil || !ok || v == "" {

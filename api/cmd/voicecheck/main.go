@@ -348,7 +348,12 @@ func main() {
 	// only Fritz's line is kept in the conversation. heard is the
 	// raw transcript ("" for proactive turns), kept so the reply
 	// can be taken back if the user turns out to be mid-sentence.
-	respond := func(request, heard string, heardAt time.Time, proactive bool) {
+	//
+	// It reports whether a reply was delivered (generated and, with a
+	// speaker, played without error), so proactive turns only clear
+	// what they announced (held messages, "where you stopped") once
+	// the user actually heard it.
+	respond := func(request, heard string, heardAt time.Time, proactive bool) (delivered bool) {
 		replyMu.Lock()
 		defer replyMu.Unlock()
 		replying.Store(true)
@@ -550,6 +555,7 @@ func main() {
 		}
 
 		var firstSpokenAt time.Time
+		speakerFailed := false
 		// usedTool flips the face back from "thinking" when Fritz
 		// starts talking again after a tool ran. Tool calls and
 		// sentences arrive on the same goroutine, so no lock.
@@ -583,6 +589,7 @@ func main() {
 				fmt.Println("speaker error (rest of reply printed, not spoken):", err)
 				_ = speaker.Close()
 				speaker = nil
+				speakerFailed = true
 			}
 		}
 		if speaker != nil {
@@ -682,6 +689,7 @@ func main() {
 			fmt.Println("reply error (speaking the partial reply):", streamErr)
 		}
 		fmt.Printf("Fritz: %s  [model took %s]\n", text, time.Since(chatStart).Round(time.Millisecond))
+		delivered = text != "" && streamErr == nil && !speakerFailed
 		if !proactive {
 			history = append(history, meta.Message{Role: "user", Content: request})
 		}
@@ -699,6 +707,7 @@ func main() {
 		if err := store.AddTurn("assistant", text); err != nil {
 			fmt.Println("memory error:", err)
 		}
+		return delivered
 	}
 	// Arrival greeting: when the eyes find the user after they've
 	// been away a while, Fritz speaks first — a short hello plus the
@@ -751,7 +760,10 @@ func main() {
 				replyMu.Unlock()
 				lastGreet = now
 				fmt.Println("[greeting: user arrived]")
-				respond(arrivalPrompt(leftAt, now, actLog, focus), "", time.Time{}, true)
+				prompt, announced := arrivalPrompt(leftAt, now, actLog, focus)
+				if respond(prompt, "", time.Time{}, true) {
+					announced()
+				}
 			}
 		}()
 	}
@@ -778,7 +790,16 @@ func main() {
 				continue
 			}
 			fmt.Println("[focus over — digest]")
-			go respond(focusOverPrompt(focus.TakeHeld()), "", time.Time{}, true)
+			go func() {
+				// Cleared only once spoken: if the reply fails, the
+				// held messages wait for the arrival greeting.
+				held := focus.Held()
+				if respond(focusOverPrompt(held), "", time.Time{}, true) {
+					focus.Forget(held)
+				} else {
+					fmt.Println("[focus digest not delivered — keeping the held messages]")
+				}
+			}()
 		}
 	}()
 
@@ -798,6 +819,12 @@ func main() {
 					texts[i] = m.Text
 				}
 				return alerts.Rules(texts)
+			},
+			FocusEnds: func() time.Time {
+				if until, on := focus.Active(); on {
+					return until
+				}
+				return time.Time{}
 			},
 			Logf: func(msg string) { fmt.Println(msg) },
 			OnImportant: func(ctx context.Context, m alerts.ImportantMail) {
@@ -1238,7 +1265,10 @@ func focusOverPrompt(held []alerts.Held) string {
 // answers. Actions finished while the user was away (approved on
 // WhatsApp or the phone) are included, so Fritz can say "I sent
 // your reply to Sarah".
-func arrivalPrompt(leftAt, now time.Time, log *activity.Log, focus *alerts.Focus) string {
+//
+// announced marks the progress reminder and held messages as told;
+// call it only once the greeting was actually delivered.
+func arrivalPrompt(leftAt, now time.Time, log *activity.Log, focus *alerts.Focus) (prompt string, announced func()) {
 	var b strings.Builder
 	b.WriteString("[Not from the user: your camera just saw the user sit down at the desk")
 	if !leftAt.IsZero() {
@@ -1260,28 +1290,34 @@ func arrivalPrompt(leftAt, now time.Time, log *activity.Log, focus *alerts.Focus
 	}
 	// Where they stopped, and what was held while they were gone:
 	// Fritz already knows these, so no slow tool calls are needed.
-	known := false
+	var commit []func()
 	if p, ok := alerts.LoadProgress(focus.State); ok && !p.Recalled && now.Sub(p.At) < 12*time.Hour {
 		fmt.Fprintf(&b, "Before leaving they told you where they stopped: %q", p.Task)
 		if p.Next != "" {
 			fmt.Fprintf(&b, ", next step: %q", p.Next)
 		}
 		b.WriteString(" — remind them in one short sentence. ")
-		p.Recalled = true
-		_ = alerts.SaveProgress(focus.State, p)
-		known = true
+		commit = append(commit, func() {
+			p.Recalled = true
+			_ = alerts.SaveProgress(focus.State, p)
+		})
 	}
 	if _, focused := focus.Active(); !focused {
-		if held := focus.TakeHeld(); len(held) > 0 {
+		if held := focus.Held(); len(held) > 0 {
 			b.WriteString("Messages you held for them: " + alerts.Digest(held) + ". Mention them in one short sentence. ")
-			known = true
+			commit = append(commit, func() { focus.Forget(held) })
 		}
 	}
-	if known {
+	announced = func() {
+		for _, c := range commit {
+			c()
+		}
+	}
+	if len(commit) > 0 {
 		b.WriteString("Don't use any tools. Keep it to two or three short sentences, no lists.")
-		return b.String()
+		return b.String(), announced
 	}
 	b.WriteString("If you have email or calendar tools, check unread email from the last 12 hours and the calendar for the next hour, " +
 		"and mention only the single most important thing, in one sentence. If nothing stands out, just say hi. No lists.")
-	return b.String()
+	return b.String(), announced
 }
