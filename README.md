@@ -8,7 +8,8 @@ where you stopped when you come back, and reaching you on WhatsApp when
 you're away.
 
 Built for the Meta Global AI Hackathon on a Raspberry Pi 5 with Meta's
-models: Muse Spark, SAM 3.1, Muse Voice Transcribe and Muse Wonder.
+models: Muse Spark, SAM 3.1, Muse Voice Transcribe and Muse Wonder, and
+coded with Muse Code and Claude Code.
 
 ## The problem
 
@@ -39,7 +40,7 @@ tagged with the Meta model behind it.
 | **Muse Spark 1.3** | The agent: conversation, tool calling (email, calendar, focus, rules, sentry), deciding which email is important, urgent, or held by your rules, and answering questions about what the camera sees | `api/internal/agent`, `api/internal/alerts/mail.go`, `api/internal/chat` |
 | **SAM 3.1** | Fritz's eyes: finds you in the camera frame about once a second so his eyes follow you and he knows when you arrive or leave, and finds named objects ("keys") anywhere on the desk | `api/internal/vision` |
 | **Muse Voice Transcribe** | His ears: realtime streaming speech-to-text from the webcam mic | `api/internal/voice` |
-| **Muse Wonder** | Overnight memory: folds the day's conversations into durable routines and preferences ("clears email around 9 AM") | `api/internal/memory/consolidate.go` |
+| **Muse Wonder** | Overnight memory: folds the day's conversations into durable routines and preferences ("clears email around 9 AM"). Also the model behind Muse Code, one of the two coding assistants that built Fritz | `api/internal/memory/consolidate.go` |
 
 ## How it works
 
@@ -144,5 +145,8 @@ Checks: `cd api && go vet ./... && go test ./...`,
 
 ## Built during the hackathon
 
-Fritz was built for the Meta Global AI Hackathon, with Claude Code as a
-coding assistant.
+Fritz was built for the Meta Global AI Hackathon with two AI coding
+assistants: **Muse Code** (running Muse Wonder) and **Claude Code**. Muse
+Code worked on the code and reviewed the build as it grew. The agent skills in
+`.agents/skills/` are the working notes both assistants read and kept up
+to date.

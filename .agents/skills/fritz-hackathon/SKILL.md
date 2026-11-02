@@ -37,10 +37,11 @@ photo" on its own; no "you seem stressed" features.
 
 1. **Impact** — a real problem the builder has firsthand (overnight email
    from other timezones, missing what matters while heads-down).
-2. **Use of Meta AI tooling** — Fritz uses five: Muse Spark (agent, vision),
-   Muse Wonder (memory consolidation), Muse Voice Transcribe (ears), SAM 3.1
-   (eyes that follow you, find objects), and Muse Code (built with it — these
-   skills are evidence). Name each one on screen in the demo.
+2. **Use of Meta AI tooling** — Fritz runs on four: Muse Spark (agent,
+   vision), Muse Wonder (memory consolidation), Muse Voice Transcribe
+   (ears), SAM 3.1 (eyes that follow you, find objects). It was built
+   with Muse Code running Muse Wonder, alongside Claude Code (these skills
+   are the shared notes). Name each one on screen in the demo.
 3. **Technical depth** — edge device, realtime streaming ASR, presence-gated
    listening, vision-driven gaze, enforced confirmation for actions,
    self-updating memory.
