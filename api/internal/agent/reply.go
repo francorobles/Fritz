@@ -96,10 +96,14 @@ func EmailReplyTool(boxes []integrations.Mailbox, store *actions.Store) []Tool {
 			return map[string]any{
 				"status":  "needs_confirmation",
 				"summary": summary,
+				"spoken":  fmt.Sprintf("Should I reply to %s: %s? Just say yes and I'll send it.", r.Name, strings.TrimRight(strings.TrimSpace(args.Body), ".!?")),
 				"action":  action.ID,
 				"note":    "Not sent. Read the summary aloud and ask the user to say yes (or approve on their phone). It expires in 15 minutes.",
 			}, nil
 		},
+		// The full body is read back before the yes: the user must
+		// hear exactly what will be sent.
+		Confirm: spokenConfirm,
 	}}
 }
 

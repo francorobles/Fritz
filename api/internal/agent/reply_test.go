@@ -42,6 +42,9 @@ func TestEmailReplyNeedsSpokenYes(t *testing.T) {
 	if !strings.Contains(string(data), "needs_confirmation") || !strings.Contains(string(data), `reply to Sarah: \"Thursday works!\"`) {
 		t.Errorf("tool result = %s", data)
 	}
+	if q := tools[0].Confirm(out); q != "Should I reply to Sarah: Thursday works? Just say yes and I'll send it." {
+		t.Errorf("spoken question = %q", q)
+	}
 	if len(box.sent) != 0 {
 		t.Fatal("email_reply sent before confirmation")
 	}

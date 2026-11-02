@@ -211,10 +211,14 @@ func CalendarCreateTool(cal CalendarCreator, store *actions.Store) []Tool {
 				return map[string]any{
 					"status":  "needs_confirmation",
 					"summary": summary,
+					"spoken":  fmt.Sprintf("Should I add %s to your calendar %s? Just say yes.", strings.TrimSpace(args.Title), spokenWhen(start, end, time.Now())),
 					"action":  action.ID,
 					"note":    "Do not say it is created. Read the summary aloud and ask the user to say yes (or approve on their phone). It expires in 15 minutes.",
 				}, nil
 			},
+			// Asking is safe to say verbatim: nothing happens until
+			// the confirmer hears a yes.
+			Confirm: spokenConfirm,
 		},
 	}
 }
@@ -243,6 +247,48 @@ func CalendarCreateExecutor(cal CalendarCreator) Executor {
 
 // whenString renders an event's span in local time the way a
 // person says it: same-day ranges share the day.
+// spokenConfirm is the fast confirmation of a gated tool: its
+// "spoken" question, asked as-is.
+func spokenConfirm(out any) string {
+	m, _ := out.(map[string]any)
+	q, _ := m["spoken"].(string)
+	return q
+}
+
+// spokenWhen says an event's time the way a person would ("tomorrow
+// from 3 to 4 PM", "on Friday at 10:30 AM"): whenString's "Fri 6 Nov
+// 3:00 PM – 4:00 PM" is for reading, not for Piper.
+func spokenWhen(start, end time.Time, now time.Time) string {
+	start, end, now = start.Local(), end.Local(), now.Local()
+	clock := func(t time.Time) string {
+		if t.Minute() == 0 {
+			return t.Format("3 PM")
+		}
+		return t.Format("3:04 PM")
+	}
+	day := func(t time.Time) string {
+		days := int(time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local).Sub(
+			time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)).Hours() / 24)
+		switch {
+		case days == 0:
+			return "today"
+		case days == 1:
+			return "tomorrow"
+		case days > 1 && days < 7:
+			return "on " + t.Format("Monday")
+		}
+		return "on " + t.Format("Monday, January 2")
+	}
+	if !end.After(start) || start.Format("2006-01-02") != end.Format("2006-01-02") {
+		return day(start) + " at " + clock(start)
+	}
+	from := clock(start)
+	if start.Format("PM") == end.Format("PM") {
+		from = strings.TrimSuffix(strings.TrimSuffix(from, " AM"), " PM") // "from 3 to 4 PM"
+	}
+	return day(start) + " from " + from + " to " + clock(end)
+}
+
 func whenString(ev integrations.Event) string {
 	if ev.AllDay {
 		return ev.Start.Format("Mon 2 Jan") + " (all day)"

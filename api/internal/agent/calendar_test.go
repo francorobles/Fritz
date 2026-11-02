@@ -133,3 +133,22 @@ func TestCalendarListTool(t *testing.T) {
 		}
 	}
 }
+
+func TestSpokenWhen(t *testing.T) {
+	now := time.Date(2026, 11, 2, 10, 0, 0, 0, time.Local) // a Monday
+	at := func(day, h, m int) time.Time { return time.Date(2026, 11, day, h, m, 0, 0, time.Local) }
+	cases := []struct {
+		start, end time.Time
+		want       string
+	}{
+		{at(3, 15, 0), at(3, 16, 0), "tomorrow from 3 to 4 PM"},
+		{at(2, 11, 30), at(2, 13, 0), "today from 11:30 AM to 1 PM"},
+		{at(6, 10, 0), at(6, 10, 0), "on Friday at 10 AM"},
+		{at(20, 9, 0), at(20, 10, 0), "on Friday, November 20 from 9 to 10 AM"},
+	}
+	for _, c := range cases {
+		if got := spokenWhen(c.start, c.end, now); got != c.want {
+			t.Errorf("spokenWhen(%v) = %q, want %q", c.start, got, c.want)
+		}
+	}
+}

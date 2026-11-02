@@ -89,7 +89,10 @@ Fast confirmations: a tool may set `Confirm(out) string`. When every
 call in a round succeeded and confirmed itself, the loop speaks those
 lines and ends the turn without a second Spark round (about half the
 latency). Used by `focus_mode start`, `interruption_rule`,
-`save_progress` and `sentry_mode`; anything that returns data to
+`save_progress`, `sentry_mode`, and the gated `calendar_create` /
+`email_reply` (they only ask: their `spoken` question — the full reply
+body, or the event with a spoken time from `spokenWhen` — is said as-is,
+and the Go confirmer still decides on the yes); anything that returns data to
 summarize (email, calendar, focus status, where_was_i) returns "" or has
 no Confirm, so the model still phrases it.
 
