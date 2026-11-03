@@ -1,5 +1,6 @@
-"""Fritz's printable body: a pod base that hides an MG996R servo, and a
-head that holds the Raspberry Pi + 3.5" TFT and turns on top of it.
+"""Fritz's printable body: a pod base that hides a standard-size servo
+(Hitec HS-422; an MG995 or MG996R fits the same base), and a head that
+holds the Raspberry Pi + 3.5" TFT and turns on top of it.
 
     python build_body.py            # writes stl/*.stl
     python build_body.py --json X   # also writes a mesh bundle for the web preview
@@ -56,16 +57,24 @@ LEDGE_H = 14.0
 # and everything leaves through the opening low on the back.
 BACK_GAP = 8.0
 
-# MG996R (standard size). Datasheet values; check yours.
-SERVO_L, SERVO_W = 40.7, 19.7
-SERVO_TAB_Z = 26.6       # body bottom -> underside of the mounting tabs
+# Hitec HS-422 (standard size, 40.6 x 19.8 x 36.6). The deck cut-out
+# also takes an MG995/MG996R (40.7 x 19.7), and the tab holes are
+# slots spanning both pitches (makers' figures disagree), so the base
+# never needs reprinting for a servo swap. Only the neck depends on
+# the servo: see HORN_TOP_ABOVE_TABS.
+SERVO_L, SERVO_W = 40.7, 19.8
+SERVO_TAB_Z = 26.5       # body bottom -> underside of the mounting tabs
 SERVO_TAB_T = 2.5        # tab thickness
-SERVO_HOLE_PITCH_L = 49.5
+SERVO_HOLE_PITCH_L = (47.6, 50.0)   # slot: HS-422 ~48, MG996R ~49.5
 SERVO_HOLE_PITCH_W = 10.0
 SERVO_SHAFT_FROM_END = 10.0   # shaft centre -> nearest end of the body
 # With the round horn fitted: top of the tabs -> top of the horn disc.
-HORN_TOP_ABOVE_TABS = 17.0
-HORN_D, HORN_T = 25.0, 2.6    # round (disc) horn diameter, thickness
+# MEASURE THIS on your servo before printing the neck. 13 is set low
+# on purpose for an unmeasured HS-422 (estimate ~15): too low only
+# widens the neck-to-deck gap (felt pads fill it), too high and the
+# neck's rim hits the deck. MG996R/MG995: about 17.
+HORN_TOP_ABOVE_TABS = 13.0
+HORN_D, HORN_T = 25.5, 2.6    # round horn: pocket fits Hitec and MG discs
 # --------------------------------------------------------------------------
 
 WALL = 3.0
@@ -148,8 +157,10 @@ def base_shell():
     shell -= cut
     for sx in (-1, 1):
         for sy in (-1, 1):
-            shell -= cyl(M3 / 2, BASE_H - DECK_T - 1, BASE_H + 1,
-                         BODY_CX + sx * SERVO_HOLE_PITCH_L / 2, sy * SERVO_HOLE_PITCH_W / 2, 32)
+            ends = [cyl(M3 / 2, BASE_H - DECK_T - 1, BASE_H + 1,
+                        BODY_CX + sx * pitch / 2, sy * SERVO_HOLE_PITCH_W / 2, 32)
+                    for pitch in SERVO_HOLE_PITCH_L]
+            shell -= Manifold.batch_hull(ends)
     # Wires out the back: servo leads up to the Pi, servo power in.
     shell -= rrect_y(18, 12, 3, 0, rb + 5, 0, 16)
     return shell
