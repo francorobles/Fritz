@@ -42,7 +42,7 @@ func TestLoadConfig(t *testing.T) {
 	// A real file parses, defaults resolve.
 	good := filepath.Join(t.TempDir(), "integrations.json")
 	_ = os.WriteFile(good, []byte(`{
-		"workmail": {"enabled": true, "address": "franco@corp.example", "password_env": "FRITZ_WM_PW"},
+		"gmail": {"enabled": true},
 		"whatsapp": {"enabled": true, "phone_number_id": "123", "allow": ["+63 917 555 0101"]}
 	}`), 0o600)
 	t.Setenv("FRITZ_INTEGRATIONS_FILE", good)
@@ -50,14 +50,8 @@ func TestLoadConfig(t *testing.T) {
 	if err != nil || path != good {
 		t.Fatalf("Load: path=%q err=%v", path, err)
 	}
-	if cfg.WorkMail.HostOrDefault() != "imap.mail.us-east-1.awsapps.com" {
-		t.Errorf("workmail host = %q", cfg.WorkMail.HostOrDefault())
-	}
-	if cfg.WorkMail.PortOrDefault() != 993 {
-		t.Errorf("workmail port = %d", cfg.WorkMail.PortOrDefault())
-	}
-	if cfg.Outlook.TenantOrDefault() != "common" {
-		t.Errorf("tenant = %q", cfg.Outlook.TenantOrDefault())
+	if !cfg.Gmail.Enabled {
+		t.Error("gmail should be enabled")
 	}
 	if cfg.WhatsApp.AlertTemplateOrDefault() != "hello_world" || cfg.WhatsApp.GraphVersionOrDefault() != "v21.0" {
 		t.Errorf("whatsapp defaults = %q/%q", cfg.WhatsApp.AlertTemplateOrDefault(), cfg.WhatsApp.GraphVersionOrDefault())
@@ -80,10 +74,10 @@ func TestSecretResolution(t *testing.T) {
 func TestRegistryStatuses(t *testing.T) {
 	t.Setenv("FRITZ_CONFIG_DIR", t.TempDir())
 
-	// Everything off: six statuses, none ready.
+	// Everything off: three statuses, none ready.
 	reg := Build(Config{}, nil)
-	if len(reg.Status) != 6 {
-		t.Fatalf("statuses = %d, want 6", len(reg.Status))
+	if len(reg.Status) != 3 {
+		t.Fatalf("statuses = %d, want 3", len(reg.Status))
 	}
 	for _, st := range reg.Status {
 		if st.Ready || st.Enabled {
@@ -95,7 +89,6 @@ func TestRegistryStatuses(t *testing.T) {
 	reg = Build(Config{
 		Gmail:    GmailConfig{Enabled: true}, // no client/token files in temp dir
 		Calendar: CalendarConfig{Enabled: true},
-		WorkMail: WorkMailConfig{Enabled: true, Address: "a@b.example", PasswordEnv: "FRITZ_UNSET_PW"},
 		WhatsApp: WhatsAppConfig{Enabled: true, PhoneNumberID: "1", TokenEnv: "FRITZ_UNSET_TOK"},
 	}, nil)
 	byName := map[string]ProviderStatus{}
@@ -108,17 +101,7 @@ func TestRegistryStatuses(t *testing.T) {
 	if byName["calendar"].Ready || !strings.Contains(byName["calendar"].Detail, "googleauth") {
 		t.Errorf("calendar status = %+v, want not-ready pointing at googleauth", byName["calendar"])
 	}
-	if byName["workmail"].Ready || !strings.Contains(byName["workmail"].Detail, "FRITZ_UNSET_PW") {
-		t.Errorf("workmail status = %+v", byName["workmail"])
-	}
 	if byName["whatsapp"].Ready {
 		t.Errorf("whatsapp status = %+v, want not-ready (token unset)", byName["whatsapp"])
-	}
-
-	// WorkMail becomes ready with an address + password env.
-	t.Setenv("FRITZ_WM_PW_OK", "pw")
-	reg = Build(Config{WorkMail: WorkMailConfig{Enabled: true, Address: "a@b.example", PasswordEnv: "FRITZ_WM_PW_OK"}}, nil)
-	if len(reg.Mailboxes) != 1 || reg.Mailboxes[0].Name() != "workmail" {
-		t.Errorf("mailboxes = %v, want one workmail", reg.Mailboxes)
 	}
 }

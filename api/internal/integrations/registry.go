@@ -6,8 +6,8 @@ import "context"
 // mailcheck prints these and the server logs them, so a broken
 // or half-configured provider is visible instead of silent.
 type ProviderStatus struct {
-	Name    string `json:"name"` // gmail | calendar | workmail | outlook | jira | whatsapp
-	Kind    string `json:"kind"` // mail | calendar | issues | chat
+	Name    string `json:"name"` // gmail | calendar | whatsapp
+	Kind    string `json:"kind"` // mail | calendar | chat
 	Enabled bool   `json:"enabled"`
 	Ready   bool   `json:"ready"`
 	Detail  string `json:"detail"`
@@ -19,7 +19,6 @@ type ProviderStatus struct {
 type Registry struct {
 	Mailboxes    []Mailbox
 	Calendar     *Calendar
-	Jira         *Jira
 	WhatsApp     *WhatsApp
 	WhatsAppHook *Webhook
 	Status       []ProviderStatus
@@ -27,7 +26,7 @@ type Registry struct {
 
 // Build constructs every enabled provider, capturing failures
 // per provider instead of failing the world: a Fritz with a
-// broken WorkMail password must still answer on WhatsApp.
+// broken Gmail token must still answer on WhatsApp.
 // brain may be nil (no chat hook is assembled then).
 func Build(cfg Config, brain Replier) *Registry {
 	reg := &Registry{}
@@ -59,53 +58,6 @@ func Build(cfg Config, brain Replier) *Registry {
 		} else {
 			reg.Calendar = cal
 			st.Ready, st.Detail = true, "shares the Gmail OAuth token (live check in mailcheck)"
-		}
-	}
-	add(st)
-
-	// WorkMail (IMAP)
-	st = ProviderStatus{Name: "workmail", Kind: "mail", Enabled: cfg.WorkMail.Enabled}
-	switch {
-	case !cfg.WorkMail.Enabled:
-		st.Detail = "disabled"
-	case cfg.WorkMail.Address == "":
-		st.Detail = "address is empty"
-	default:
-		if password, err := Secret(cfg.WorkMail.PasswordEnv); err != nil {
-			st.Detail = err.Error()
-		} else {
-			reg.Mailboxes = append(reg.Mailboxes, NewWorkMail(cfg.WorkMail, password))
-			st.Ready, st.Detail = true, "IMAP "+cfg.WorkMail.HostOrDefault()+" (live check in mailcheck)"
-		}
-	}
-	add(st)
-
-	// Outlook (Graph)
-	st = ProviderStatus{Name: "outlook", Kind: "mail", Enabled: cfg.Outlook.Enabled}
-	switch {
-	case !cfg.Outlook.Enabled:
-		st.Detail = "disabled"
-	default:
-		if o, err := NewOutlook(cfg.Outlook); err != nil {
-			st.Detail = err.Error()
-		} else {
-			reg.Mailboxes = append(reg.Mailboxes, o)
-			st.Ready, st.Detail = true, "Graph token loaded (live check in mailcheck)"
-		}
-	}
-	add(st)
-
-	// Jira
-	st = ProviderStatus{Name: "jira", Kind: "issues", Enabled: cfg.Jira.Enabled}
-	switch {
-	case !cfg.Jira.Enabled:
-		st.Detail = "disabled"
-	default:
-		if j, err := NewJira(cfg.Jira); err != nil {
-			st.Detail = err.Error()
-		} else {
-			reg.Jira = j
-			st.Ready, st.Detail = true, cfg.Jira.BaseURL
 		}
 	}
 	add(st)

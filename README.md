@@ -183,7 +183,7 @@ was written during the hackathon.
 
 - **Piper** text-to-speech with the `en_US-lessac-medium` voice (runs
   locally on the Pi).
-- Open-source libraries: SDL2 (the eyes), chi, go-imap, gorilla/websocket,
+- Open-source libraries: SDL2 (the eyes), chi, gorilla/websocket,
   Google's API client for Go, Next.js and React (the dashboard),
   manifold3d (the printable body). Full lists in `api/go.mod`,
   `web/package.json` and `iot/CMakeLists.txt`.

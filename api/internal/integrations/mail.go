@@ -7,7 +7,7 @@ import (
 
 // Summary is one message as lists show it (never the full body).
 type Summary struct {
-	Account string    `json:"account"` // gmail | workmail | outlook
+	Account string    `json:"account"` // gmail
 	ID      string    `json:"id"`
 	From    string    `json:"from"`
 	Subject string    `json:"subject"`

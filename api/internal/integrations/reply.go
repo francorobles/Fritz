@@ -13,8 +13,7 @@ import (
 )
 
 // MailReplier is a mailbox that can answer a message in its thread.
-// Only Gmail for now (the gmail.compose scope covers sending);
-// IMAP and Graph stay read-only until they need it.
+// Only Gmail for now (the gmail.compose scope covers sending).
 type MailReplier interface {
 	Mailbox
 	// PrepareReply resolves who a reply to id goes to and how it

@@ -15,7 +15,7 @@
     {"id": "family", "from": "Elena <elena.home@mail.example>", "subject": "Call me as soon as you can", "snippet": "Please call me as soon as you see this, it's about your dad. He's okay but I need to talk.", "expect": "interrupt"},
 
     {"id": "weekly-update", "from": "Dana Cruz <dana@company.example>", "subject": "Weekly project update", "snippet": "Here's where we are this week: design done, backend 70%, QA starts Monday. No action needed.", "expect": "hold"},
-    {"id": "sprint-status", "from": "Jira <jira@company.example>", "subject": "Sprint 14 status update", "snippet": "Sprint 14 progress: 18 of 24 issues done. Burndown attached.", "expect": "hold"},
+    {"id": "sprint-status", "from": "Tracker <tracker@company.example>", "subject": "Sprint 14 status update", "snippet": "Sprint 14 progress: 18 of 24 issues done. Burndown attached.", "expect": "hold"},
     {"id": "project-deadline-friday", "from": "Dana Cruz <dana@company.example>", "subject": "Project update: new timeline, sign-off by Friday", "snippet": "The timeline changed. Please review and sign off on the new plan by Friday.", "expect": "hold"},
     {"id": "client-invoice", "from": "Ramon Reyes <ramon@client.example>", "subject": "Question about invoice #1042", "snippet": "Hi! Quick question about one line item on the last invoice, whenever you get a chance this week.", "expect": "hold"},
     {"id": "manager-plan", "from": "Maria Santos <maria@company.example>", "subject": "Q1 plan — your thoughts?", "snippet": "When you have time this week, could you look at the Q1 plan draft and send me your thoughts?", "expect": "hold"},

@@ -1,5 +1,5 @@
 // Package integrations connects Fritz to the user's accounts:
-// Gmail, AWS WorkMail, company Outlook, Jira, and WhatsApp.
+// Gmail, Google Calendar, and WhatsApp.
 // See the fritz-integrations skill.
 //
 // Settings live in integrations.json inside FRITZ_CONFIG_DIR
@@ -23,9 +23,6 @@ import (
 type Config struct {
 	Gmail    GmailConfig    `json:"gmail"`
 	Calendar CalendarConfig `json:"calendar"`
-	WorkMail WorkMailConfig `json:"workmail"`
-	Outlook  OutlookConfig  `json:"outlook"`
-	Jira     JiraConfig     `json:"jira"`
 	WhatsApp WhatsAppConfig `json:"whatsapp"`
 }
 
@@ -39,64 +36,6 @@ type CalendarConfig struct {
 // files in the config dir (google-client.json, google-token.json).
 type GmailConfig struct {
 	Enabled bool `json:"enabled"`
-}
-
-// WorkMailConfig is IMAP over TLS (WorkMail has no Gmail-style
-// API). Host derives from Region unless set explicitly.
-type WorkMailConfig struct {
-	Enabled     bool   `json:"enabled"`
-	Address     string `json:"address"`      // mailbox address, also the IMAP user
-	PasswordEnv string `json:"password_env"` // env var holding the mailbox password
-	Region      string `json:"region"`       // default us-east-1
-	Host        string `json:"host"`         // override: imap.mail.<region>.awsapps.com
-	Port        int    `json:"port"`         // default 993
-}
-
-// HostOrDefault resolves the IMAP host.
-func (c WorkMailConfig) HostOrDefault() string {
-	if c.Host != "" {
-		return c.Host
-	}
-	region := c.Region
-	if region == "" {
-		region = "us-east-1"
-	}
-	return "imap.mail." + region + ".awsapps.com"
-}
-
-// Port resolves the IMAP port.
-func (c WorkMailConfig) PortOrDefault() int {
-	if c.Port > 0 {
-		return c.Port
-	}
-	return 993
-}
-
-// OutlookConfig is Microsoft Graph with delegated device-code
-// sign-in: ClientID is your Azure app registration (public, not
-// a secret); tokens land in outlook-token.json.
-type OutlookConfig struct {
-	Enabled  bool   `json:"enabled"`
-	ClientID string `json:"client_id"`
-	Tenant   string `json:"tenant"` // default "common"
-}
-
-// TenantOrDefault resolves the tenant.
-func (c OutlookConfig) TenantOrDefault() string {
-	if c.Tenant != "" {
-		return c.Tenant
-	}
-	return "common"
-}
-
-// JiraConfig covers Jira Cloud (email + API token, HTTP Basic)
-// and Jira Server/DC (personal access token, Bearer when no
-// email is configured).
-type JiraConfig struct {
-	Enabled  bool   `json:"enabled"`
-	BaseURL  string `json:"base_url"` // https://company.atlassian.net
-	EmailEnv string `json:"email_env"`
-	TokenEnv string `json:"token_env"`
 }
 
 // WhatsAppConfig is the WhatsApp Business Cloud API, both ways:
@@ -147,7 +86,6 @@ func ConfigDir() string {
 func ConfigFile() string       { return filepath.Join(ConfigDir(), "integrations.json") }
 func GoogleClientFile() string { return filepath.Join(ConfigDir(), "google-client.json") }
 func GoogleTokenFile() string  { return filepath.Join(ConfigDir(), "google-token.json") }
-func OutlookTokenFile() string { return filepath.Join(ConfigDir(), "outlook-token.json") }
 
 // Load reads the integrations config. A missing file is not an
 // error: it means a fresh install with everything disabled.

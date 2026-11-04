@@ -5,8 +5,6 @@ go 1.26.0
 require github.com/go-chi/chi/v5 v5.2.1
 
 require (
-	github.com/emersion/go-imap/v2 v2.0.0-beta.8
-	github.com/emersion/go-message v0.18.2
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/image v0.47.0
 	golang.org/x/oauth2 v0.37.0
@@ -20,7 +18,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
-	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

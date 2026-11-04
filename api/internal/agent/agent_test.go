@@ -163,10 +163,10 @@ func TestMailSearchMergesNewestFirst(t *testing.T) {
 	gmail := &fakeBox{name: "gmail", mail: []integrations.Message{
 		msg("gmail", "g1", "A", "old", now.Add(-2*time.Hour), ""),
 	}}
-	work := &fakeBox{name: "workmail", mail: []integrations.Message{
-		msg("workmail", "w1", "B", "new", now, ""),
+	work := &fakeBox{name: "work", mail: []integrations.Message{
+		msg("work", "w1", "B", "new", now, ""),
 	}}
-	broken := &fakeBox{name: "outlook", err: errors.New("token expired")}
+	broken := &fakeBox{name: "school", err: errors.New("token expired")}
 	out, err := searchMail(context.Background(), []integrations.Mailbox{gmail, work, broken}, "", 0)
 	if err != nil {
 		t.Fatalf("searchMail: %v", err)

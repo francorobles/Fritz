@@ -297,7 +297,7 @@ func TestFocusHoldsWhatCanWait(t *testing.T) {
 	f := &Focus{State: st, Now: func() time.Time { return clock }}
 	normal := ImportantMail{Mail: integrations.Summary{From: "Dana <d@x.com>", Subject: "Q4 update"}, Why: "project update"}
 	urgent := ImportantMail{Mail: integrations.Summary{From: "Bank", Subject: "Payment failed"}, Urgent: true}
-	ruled := ImportantMail{Mail: integrations.Summary{From: "Jira", Subject: "Sprint notes"}, Hold: true}
+	ruled := ImportantMail{Mail: integrations.Summary{From: "Tracker", Subject: "Sprint notes"}, Hold: true}
 
 	// Not focusing: only the user's rule holds anything.
 	if hold, _ := f.ShouldHold(normal); hold {

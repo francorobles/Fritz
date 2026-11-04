@@ -36,7 +36,7 @@ func loadTokenFile(path string) (*oauth2.Token, error) {
 
 // persistingTokenSource wraps a refreshing TokenSource and saves
 // the token whenever the access token changes, so refresh tokens
-// survive restarts (Google and Microsoft both rotate).
+// survive restarts (Google rotates them).
 type persistingTokenSource struct {
 	src  oauth2.TokenSource
 	path string

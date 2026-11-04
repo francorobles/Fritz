@@ -64,7 +64,7 @@ func TestEmailReplyNeedsSpokenYes(t *testing.T) {
 
 func TestEmailReplyRejectsBadInput(t *testing.T) {
 	store := newActionStore(t)
-	readOnly := &fakeBox{name: "workmail"}
+	readOnly := &fakeBox{name: "work"}
 	if tools := EmailReplyTool([]integrations.Mailbox{readOnly}, store); tools != nil {
 		t.Error("no mailbox can send: email_reply must not be offered")
 	}
@@ -72,7 +72,7 @@ func TestEmailReplyRejectsBadInput(t *testing.T) {
 	tool := EmailReplyTool([]integrations.Mailbox{box, readOnly}, store)[0]
 	for _, args := range []string{
 		`{"account":"gmail","id":"m1","body":"   "}`,
-		`{"account":"workmail","id":"m1","body":"hi"}`,
+		`{"account":"work","id":"m1","body":"hi"}`,
 		`{"account":"gmail","id":"m1","body":"` + strings.Repeat("x", maxReplyRunes+1) + `"}`,
 	} {
 		if _, err := tool.Run(context.Background(), json.RawMessage(args)); err == nil {
