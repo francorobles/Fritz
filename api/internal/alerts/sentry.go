@@ -106,13 +106,18 @@ func (s *Sentry) OnPresence(ctx context.Context, present bool) bool {
 		return false
 	}
 	armed, armedAt := SentryArmed(s.Flags)
+	// Each skip is logged: "I came back and got no photo" is
+	// otherwise impossible to tell apart from a send failure.
 	switch {
 	case !armed:
 	case now.Sub(armedAt) < orDefault(s.Grace, 20*time.Second):
+		s.logf("alerts: sentry: arrival ignored, armed only %s ago (grace period)", now.Sub(armedAt).Round(time.Second))
 		armed = false
 	case !s.leftAt.IsZero() && now.Sub(s.leftAt) < orDefault(s.MinAway, 5*time.Second):
+		s.logf("alerts: sentry: arrival ignored, the desk was empty only %s", now.Sub(s.leftAt).Round(time.Second))
 		armed = false
 	case !s.lastAlert.IsZero() && now.Sub(s.lastAlert) < orDefault(s.Cooldown, 2*time.Minute):
+		s.logf("alerts: sentry: arrival ignored, last photo was %s ago (cooldown)", now.Sub(s.lastAlert).Round(time.Second))
 		armed = false
 	}
 	if armed {

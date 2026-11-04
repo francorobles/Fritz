@@ -62,7 +62,7 @@ photo" on its own; no "you seem stressed" features.
 8. Focus mode, interruption rules, "where was I" ✅ (Nov 2) — the core of
    story A. Measured with `api/cmd/triageeval`.
 
-Not in the demo: the servo head (parked), Facebook comments, aircon.
+Not in the demo: the servo head (dropped: no time to tune it), Facebook comments, aircon.
 No phone apps: WhatsApp is the away channel. Muse Gadgets is not an option — the Muse app isn't
 available in the Philippines.
 

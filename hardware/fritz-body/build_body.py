@@ -1,4 +1,8 @@
-"""Fritz's printable body: a pod base that hides a standard-size servo
+"""Fritz's original printable body. (The final Fritz in the README photo
+was printed by an outside 3D printing service, which replaced this round
+base with a square one; the head and lid follow this design.)
+
+A pod base that hides a standard-size servo
 (Hitec HS-422; an MG995 or MG996R fits the same base), and a head that
 holds the Raspberry Pi + 3.5" TFT and turns on top of it.
 

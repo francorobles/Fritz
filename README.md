@@ -1,5 +1,9 @@
 # Fritz
 
+<p align="center">
+  <img src="docs/fritz.jpg" alt="Fritz on a desk: a white 3D-printed robot with a screen showing two happy blue eyes, the Logitech C922 webcam on a stand beside him and the Echo Dot behind" width="380">
+</p>
+
 **A desk companion that guards your attention.** Fritz sits on your desk
 with animated eyes, sees when you're there, listens when you talk to him,
 and keeps track of what you'd otherwise miss: holding back email that can
@@ -117,24 +121,22 @@ cd api && MODEL_API_KEY=... go run ./cmd/triageeval -runs 3
 Raspberry Pi 4 Model B · 3.5" GPIO display (the eyes) · Logitech C922 webcam
 (camera and mic) · Amazon Echo Dot as a Bluetooth speaker.
 
-**The body** is a 3D-printable pod and head, generated from code
-(`hardware/fritz-body/build_body.py`, Python + manifold3d). The five
-printed parts are in `hardware/fritz-body/stl/`:
+**The body** (in the photo above) is white 3D-printed PLA: a head that
+holds the Pi + screen behind a window, with ears and vents on its lid,
+on a square base with wheels. Its final version was printed by a
+third-party 3D printing service, which also reworked my round base into
+the square one at the last minute (outside printing services are allowed,
+confirmed with the organizers).
 
-| Part | Size (mm) | What it does |
-|---|---|---|
-| `base_shell` | Ø120 × 48 | The pod; its deck is cut for a standard-size servo |
-| `base_floor` | Ø113 × 7 | Press-fit floor with pockets for rubber feet |
-| `neck` | Ø88 × 18 | Collar between the base and the head |
-| `head` | 103 × 49 × 86 | Holds the Pi + screen; screen window in front, USB window on the side |
-| `lid` | 103 × 49 × 19 | Top cover with ears and vents |
-
-PLA, 0.2 mm layers, 3 walls, 15–20 % infill, no supports. The Pi's
-USB-C power runs under the Pi (use a right-angle plug) and out a slot low
-on the back of the head. Measure your Pi + screen before printing: the
-sizes at the top of `build_body.py` are the only thing that differs
-between builds. To regenerate: `pip install manifold3d numpy && python
-build_body.py`.
+My original printable design is in `hardware/fritz-body/`, generated from
+code (`build_body.py`, Python + manifold3d), with STLs in `stl/`: the
+head and lid, plus the round base, floor and neck that the square base
+replaced. PLA, 0.2 mm layers, no supports. The
+Pi's USB-C power runs under the Pi (use a right-angle plug) and out a
+slot low on the back of the head. Measure your Pi + screen before
+printing: the sizes at the top of `build_body.py` are the only thing
+that differs between builds. To regenerate: `pip install manifold3d
+numpy && python build_body.py`.
 
 ## Repository
 
@@ -143,7 +145,7 @@ build_body.py`.
 | `api/` | Go: voice loop, agent and tools, vision, alerts, memory, HTTP server |
 | `iot/` | C++17 / SDL2: the animated eyes |
 | `web/` | Next.js dashboard |
-| `hardware/` | Printable body (parametric, Python + manifold3d) |
+| `hardware/` | My original printable body design (parametric, Python + manifold3d) |
 | `scripts/` | `run-fritz.sh` (start everything on the Pi), `preflight.sh`, `check-hardware.sh` |
 | `.agents/skills/` | Working notes for the coding agents that helped build Fritz |
 
@@ -166,16 +168,35 @@ Checks: `cd api && go vet ./... && go test ./...`,
 
 ## What's next
 
-- **A turning head.** The base already fits a standard servo (Hitec
-  HS-422) that would turn the whole head toward you as you arrive, driven
-  from the Pi's hardware PWM on GPIO12. The servo code isn't part of this
-  submission yet.
+- **A turning head.** A servo in the base (a Hitec HS-422, driven from
+  the Pi's hardware PWM on GPIO12) would turn the whole head toward you
+  as you arrive. The original round base in `hardware/fritz-body` already
+  has a mount for it, but there wasn't time to tune the motion for this
+  submission.
 - **Muse Gadgets** once the Muse app is available in the Philippines, as a
   second way to reach you away from the desk.
 
+## Credits
+
+Fritz uses these under their own licenses; everything else in this repo
+was written during the hackathon.
+
+- **Piper** text-to-speech with the `en_US-lessac-medium` voice (runs
+  locally on the Pi).
+- Open-source libraries: SDL2 (the eyes), chi, go-imap, gorilla/websocket,
+  Google's API client for Go, Next.js and React (the dashboard),
+  manifold3d (the printable body). Full lists in `api/go.mod`,
+  `web/package.json` and `iot/CMakeLists.txt`.
+- The nine eye expressions are drawn in code after
+  [easydrawingtips.com's eye-expressions tutorial](https://www.easydrawingtips.com/how-to-draw-eye-expressions-step-by-step/);
+  no images from it are included.
+
 ## Built during the hackathon
 
-Fritz was built for the Meta Global AI Hackathon with two AI coding
+Every commit in this repo is from the hackathon window (first commit
+Oct 27, 2026): the code, the eyes, the dashboard and the body
+design are all new. The final body was printed by an outside 3D printing
+service (see Hardware). Fritz was built with two AI coding
 assistants: **Muse Code** (running Muse Wonder) and **Claude Code**. Muse
 Code worked on the code and reviewed the build as it grew. The agent skills in
 `.agents/skills/` are the working notes both assistants read and kept up

@@ -277,6 +277,13 @@ func main() {
 		sam := &vision.Limiter{Seg: chat, Logf: func(msg string) { fmt.Println(msg) }}
 		follow = vision.NewTracker(sam, faceClient, frames, visionCfg)
 		follow.Logf = func(msg string) { fmt.Println(msg) }
+		// Printed because the rate decides whether SAM's per-minute
+		// quota holds: over it, Fritz goes blind for a minute.
+		if visionCfg.HZ > 0 {
+			fmt.Printf("vision: tracking at %g checks/s (FRITZ_TRACK_HZ)\n", visionCfg.HZ)
+		} else {
+			fmt.Println("vision: tracking at the default 2 checks/s — too fast for SAM's quota; use --demo or set FRITZ_TRACK_HZ")
+		}
 		go follow.Run(ctx)
 
 		// "Where are my keys?": SAM on demand, plus a slow

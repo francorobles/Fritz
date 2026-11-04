@@ -127,7 +127,12 @@ if [ "$demo" -eq 1 ]; then
     export FRITZ_CHECKIN_EVERY_MS="${FRITZ_CHECKIN_EVERY_MS:-30000}"
     export FRITZ_MAIL_POLL_MS="${FRITZ_MAIL_POLL_MS:-20000}"     # a sent email shows up in ~20 s
     export FRITZ_SENTRY_COOLDOWN_MS="${FRITZ_SENTRY_COOLDOWN_MS:-30000}"
-    export FRITZ_TRACK_HZ="${FRITZ_TRACK_HZ:-1}"
+    # SAM answered 429 with a 60 s Retry-After at 1 Hz tracking plus
+    # the keys scan (~66 calls a minute): a per-minute quota. 0.75 Hz
+    # keeps the total near 50, and a blind minute is worse than
+    # slightly lazier eyes (Fritz can't see you leave or come back,
+    # so sentry and greetings never fire).
+    export FRITZ_TRACK_HZ="${FRITZ_TRACK_HZ:-0.75}"
 fi
 if [ "$build" -eq 1 ] || [ ! -x bin/voicecheck ]; then
     echo "== building the voice loop"
