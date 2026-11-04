@@ -470,6 +470,13 @@ func main() {
 				"When a tool says an action needs confirmation, read its summary aloud and ask the user to say yes — never claim it is done until they do. " +
 				"Before calling a tool you may say a brief, natural lead-in (vary it, or skip it); never mention tool names."
 		}
+		// Without WhatsApp there is no sentry tool, and the model
+		// happily says "I'll keep watching" anyway: a promise
+		// nothing keeps.
+		if sentry == nil {
+			system += "\nSentry mode isn't available right now (WhatsApp isn't set up). If the user asks for it, say so in one short " +
+				"sentence; never say you'll watch the desk or message them."
+		}
 		// While sentry mode is on, the person talking may not be
 		// the owner: no personal tools, no personal details.
 		turnTools := tools
