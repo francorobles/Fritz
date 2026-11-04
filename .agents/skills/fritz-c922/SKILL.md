@@ -127,6 +127,11 @@ arecord -D pipewire -f S16_LE -r 16000 -c 1 -t raw -q -
 - Playback of Piper output:
   `aplay -D pipewire -r 22050 -f S16_LE -c 1 -t raw -q` (rate must match the
   Piper voice's `.onnx.json`).
+- WirePlumber config lives in `scripts/wireplumber/`; install it with
+  `scripts/install-audio-config.sh`. It limits the Pi's Bluetooth roles to
+  sending audio. Without that, the Echo can connect to the Pi as its
+  speaker: the profile shows as `audio-gateway` and no `bluez_output` sink
+  exists. It also stops the idle Echo sink from suspending.
 - Volume: the Pi sink volume caps the Echo's. At startup run
   `wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0`. Don't go above 1.0
   (distortion).

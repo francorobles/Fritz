@@ -33,6 +33,7 @@ import (
 	"github.com/francorobles/fritz/api/internal/integrations"
 	"github.com/francorobles/fritz/api/internal/memory"
 	"github.com/francorobles/fritz/api/internal/meta"
+	"github.com/francorobles/fritz/api/internal/speaker"
 	"github.com/francorobles/fritz/api/internal/vision"
 	"github.com/francorobles/fritz/api/internal/voice"
 )
@@ -63,6 +64,15 @@ func main() {
 		os.Exit(1)
 	}
 	defer arecord.Wait()
+
+	// Keep the Echo Dot connected: it drops the Bluetooth link on its
+	// own and nothing else brings it back (see internal/speaker).
+	if mac := os.Getenv("FRITZ_SPEAKER_BT"); mac != "" {
+		wd := &speaker.Watchdog{MAC: mac, Logf: func(f string, a ...any) { fmt.Printf(f+"\n", a...) }}
+		go wd.Run(ctx)
+	} else {
+		fmt.Println("note: FRITZ_SPEAKER_BT unset — the Echo Dot won't be reconnected if it drops")
+	}
 
 	faceClient, _ := face.New(face.DefaultAddr)
 	if faceClient != nil {
