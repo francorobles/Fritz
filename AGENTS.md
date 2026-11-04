@@ -1,7 +1,7 @@
 # Fritz — project instructions for coding agents
 
 Fritz is a desk companion for the Meta Global AI Hackathon (submission
-deadline **Nov 4, 2026, 9 PM ET**). It runs on a Raspberry Pi 5 with a
+deadline **Nov 4, 2026, 9 PM ET**). It runs on a Raspberry Pi 4 Model B with a
 display (animated EVE-style eyes), a Logitech C922 USB webcam (camera and
 microphone), and an Echo Dot as a Bluetooth speaker. You talk to it by voice; it sees you, follows you with its eyes,
 reads your email and calendar, guards your focus (holds what can wait,
@@ -11,7 +11,7 @@ WhatsApp when you're away.
 ## Architecture (decided — don't redesign)
 
 ```
-            Raspberry Pi 5
+            Raspberry Pi 4B
  ┌──────────────────────────────────────────────────────┐
  │ iot/  fritz_iot (C++/SDL2)   ◄── UDP 127.0.0.1:7070 ──┤ face commands
  │       fullscreen eyes                                 │
@@ -29,10 +29,8 @@ WhatsApp when you're away.
            (with Meta model badges), memories
  WhatsApp  away channel: alerts out, replies in (webhook via Tailscale
            Funnel, webhook path only)
- android/  Kotlin companion — scaffold only, not in the demo
 ```
 
-- `ios/` is out of scope for the hackathon. Don't touch it.
 - The Muse app isn't available in the Philippines, so Muse Gadgets isn't
   used; WhatsApp is Fritz's link to the user away from the desk.
 - Run on the Pi with `scripts/run-fritz.sh` (`--demo` for recordings);
@@ -51,8 +49,6 @@ WhatsApp when you're away.
 | `fritz-voice` | Mic capture, transcription, wake phrase, TTS |
 | `fritz-agent` | The Muse Spark tool-calling loop, tools, memory, guardrails |
 | `fritz-integrations` | Gmail and Google Calendar (OAuth, tools) |
-| `fritz-mobile` | The Android app in android/: push alerts, Approve/Decline, push-to-talk |
-| `fritz-mobile-backend` | Go side for the phone: mobile API, pending actions, FCM pushes, Tailscale |
 | `fritz-pi-deploy` | Cross-compiling, systemd, devices, secrets on the Pi |
 | `fritz-hackathon` | Rules, banned topics, judging, scope cuts, demo and submission |
 
@@ -64,7 +60,6 @@ WhatsApp when you're away.
   `fritz::` namespace and comments explaining *why*; Go with stdlib +
   chi, small packages under `api/internal/`.
 - Build checks: `cmake -S iot -B iot/build && cmake --build iot/build`,
-  `cd api && go vet ./... && go test ./...`, `cd web && npm run build`,
-  `cd android && ./gradlew :app:assembleDebug :app:testDebugUnitTest`.
+  `cd api && go vet ./... && go test ./...`, `cd web && npm run build`.
 - Anything that sends an email or creates an event must be confirmed by
   the user out loud first, enforced in code (see `fritz-agent`).

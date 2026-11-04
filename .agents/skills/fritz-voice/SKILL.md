@@ -113,8 +113,7 @@ Pi 4). Say so in the README and demo — it isn't a Meta model.
 - Face: `speaking on` before the first chunk, `speaking off` after the last.
 - While speaking, and for 700 ms after (Bluetooth delay), send silence
   instead of mic audio so Fritz doesn't hear itself through the C922 — see
-  "Echo avoidance" in `fritz-c922`. Stopping Fritz mid-sentence is done from
-  the phone app, not by voice.
+  "Echo avoidance" in `fritz-c922`. Fritz can't be stopped mid-sentence by voice.
 
 ## Testing
 

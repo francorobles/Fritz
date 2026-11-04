@@ -1,17 +1,6 @@
 # General
 .DS_Store
 
-# Android
-android/.gradle/
-android/local.properties
-android/**/build/
-android/captures/
-
-# iOS
-ios/**/xcuserdata/
-ios/**/DerivedData/
-ios/.build/
-
 # IoT
 iot/build/
 iot/build-*/
@@ -30,9 +19,7 @@ web/node_modules/
 web/.next/
 web/out/
 
-# Secrets (Firebase, Google OAuth, env)
-android/app/google-services.json
-firebase-sa*.json
+# Secrets (Google OAuth, env)
 google-client*.json
 *token.json
 *.env

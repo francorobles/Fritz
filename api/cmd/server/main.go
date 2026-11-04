@@ -78,8 +78,8 @@ func main() {
 			}
 			log.Printf("integration %-9s %-6s %s", st.Name, state, st.Detail)
 		}
-		// Pending actions share the memory database. The phone
-		// approves through /actions (app token), WhatsApp and
+		// Pending actions share the memory database. /actions
+		// approves over HTTP (app token), WhatsApp and
 		// voice through the same Go-checked confirmer — all
 		// claim atomically, so an action executes exactly once.
 		if opened, aerr := actions.Open(dbPath); aerr != nil {
@@ -92,7 +92,7 @@ func main() {
 				brain.Confirmer = &agent.Confirmer{Store: actStore, Exec: execMap, Activity: actLog, Source: "whatsapp"}
 			}
 			if os.Getenv("FRITZ_APP_TOKEN") == "" {
-				log.Print("FRITZ_APP_TOKEN unset — /actions phone approval routes are off")
+				log.Print("FRITZ_APP_TOKEN unset — /actions approval routes are off")
 			}
 		}
 		// WhatsApp replies get the same tools as voice (minus the

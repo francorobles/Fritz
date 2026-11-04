@@ -56,15 +56,14 @@ photo" on its own; no "you seem stressed" features.
    frame attached to the Spark turn) ✅
 5. Memory + web dashboard + Muse Wonder consolidation ✅
 6. Proactive greeting on arrival ✅
-7. Away mode over **WhatsApp** ✅ (replaces the Android app): important
+7. Away mode over **WhatsApp** ✅: important
    mail and sentry photos reach the user; replies run the same tools; a
    "yes" there approves.
 8. Focus mode, interruption rules, "where was I" ✅ (Nov 2) — the core of
    story A. Measured with `api/cmd/triageeval`.
 
-Not in the demo: the Android app and FCM pushes (`fritz-mobile`,
-scaffold only), the servo head (parked), Facebook comments, aircon.
-Out of scope: `ios/`. Muse Gadgets is not an option — the Muse app isn't
+Not in the demo: the servo head (parked), Facebook comments, aircon.
+No phone apps: WhatsApp is the away channel. Muse Gadgets is not an option — the Muse app isn't
 available in the Philippines.
 
 ## Plan to the deadline

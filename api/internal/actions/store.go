@@ -1,9 +1,9 @@
 // Package actions is Fritz's pending-actions store: things
 // that change the world (create an event, send an email) wait
 // here until the user confirms — by spoken yes at the desk, by
-// WhatsApp yes, or by Approve in the phone app. The shared store
-// and its exactly-once approval are the confirmation rule's
-// enforcement point (fritz-agent + fritz-mobile-backend skills).
+// WhatsApp yes, or through the /actions HTTP routes. The shared
+// store and its exactly-once approval are the confirmation rule's
+// enforcement point (fritz-agent skill).
 package actions
 
 import (
@@ -180,7 +180,7 @@ func (s *Store) LatestPending() (Action, bool, error) {
 }
 
 // PendingList returns unexpired pending actions, newest first
-// (the phone's approval queue).
+// (the /actions approval queue).
 func (s *Store) PendingList(limit int) ([]Action, error) {
 	if limit <= 0 {
 		limit = 50
@@ -205,7 +205,7 @@ func (s *Store) PendingList(limit int) ([]Action, error) {
 }
 
 // claim atomically moves one pending action to next. Exactly
-// one caller wins: voice and phone approving at the same moment
+// one caller wins: voice and WhatsApp approving at the same moment
 // can never both execute (the skill's double-send guard).
 func (s *Store) claim(id, next string) (Action, error) {
 	s.expireOld()

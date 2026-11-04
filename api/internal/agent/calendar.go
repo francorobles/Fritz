@@ -174,7 +174,7 @@ func CalendarCreateTool(cal CalendarCreator, store *actions.Store) []Tool {
 			Name: "calendar_create",
 			Description: "Propose creating a Google Calendar event. This does NOT create it yet: " +
 				"it files a pending action and returns a summary you must read aloud, then ask " +
-				"the user to confirm (they say yes, or approve on the phone). Only confirm " +
+				"the user to confirm (they say yes). Only confirm " +
 				"after they agree. Times are RFC 3339 with offset; end defaults to start + 1 hour.",
 			Parameters: map[string]any{
 				"type": "object",

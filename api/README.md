@@ -1,7 +1,7 @@
 # Fritz — API (Go)
 
-Go HTTP API using [chi](https://github.com/go-chi/chi). Serves the Android,
-iOS, IoT, and web clients.
+Go HTTP API using [chi](https://github.com/go-chi/chi). Serves the web dashboard
+and the WhatsApp webhook.
 
 ## Run
 

@@ -13,8 +13,7 @@ import (
 	"github.com/francorobles/fritz/api/internal/agent"
 )
 
-// appAuth guards the phone-facing routes (fritz-mobile-backend
-// skill): Authorization: Bearer <FRITZ_APP_TOKEN>, compared in
+// appAuth guards the personal routes: Authorization: Bearer <FRITZ_APP_TOKEN>, compared in
 // constant time. The routes are only mounted when a token is
 // configured at all.
 func appAuth(token string) func(http.Handler) http.Handler {
@@ -79,7 +78,7 @@ func actionError(w http.ResponseWriter, err error) {
 }
 
 // approve claims the action atomically (exactly one execution,
-// even if voice and phone approve together), runs it, and
+// even if voice and WhatsApp approve together), runs it, and
 // reports the spoken-style result.
 func (h *actionsHandlers) approve(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

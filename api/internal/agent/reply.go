@@ -51,7 +51,7 @@ func EmailReplyTool(boxes []integrations.Mailbox, store *actions.Store) []Tool {
 		Name: "email_reply",
 		Description: "Propose a reply to an email (use account + id from email_search). This does NOT send: " +
 			"it files a pending action and returns a summary you must read aloud, then ask the user to confirm " +
-			"(they say yes, or approve on the phone). Write the body as the user, in their words: short, plain " +
+			"(they say yes). Write the body as the user, in their words: short, plain " +
 			"text, no signature unless they asked for one.",
 		Parameters: map[string]any{
 			"type": "object",
@@ -134,7 +134,7 @@ func EmailReplyExecutor(boxes []integrations.Mailbox) Executor {
 
 // Executors maps every confirmation-gated action kind to the code
 // that runs it once confirmed, for whatever is connected. Voice,
-// WhatsApp, and the phone's Approve share this one map, so a new
+// WhatsApp, and the /actions routes share this one map, so a new
 // gated tool only needs adding here.
 func Executors(reg *integrations.Registry) map[string]Executor {
 	exec := map[string]Executor{}

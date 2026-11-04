@@ -154,7 +154,7 @@ The C922 mic will pick up Fritz's voice from the Echo. Half-duplex:
 - Keep muting for **700 ms after playback ends** — Bluetooth delay means
   the Echo is still playing after `aplay` exits.
 - Barge-in ("Fritz, stop") then can't be heard while speaking; accept that
-  for the hackathon, or let the user stop Fritz from the phone app.
+  for the hackathon.
 
 ## Hardware check script
 

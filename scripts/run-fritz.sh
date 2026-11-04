@@ -2,7 +2,7 @@
 # Restart Fritz on the Pi in one go: stop any running voice/vision
 # loop and stray face instances, rebuild and reinstall the face if
 # its code changed, restart fritz-face (the eyes), start the API server
-# in the background (WhatsApp replies, phone app, dashboard), then run
+# in the background (WhatsApp replies, dashboard), then run
 # the voice loop (voicecheck: voice + memory + eyes following you) in
 # the foreground. Ctrl-C stops the voice loop; the eyes and the server
 # keep running.
@@ -120,8 +120,11 @@ export FRITZ_DB="${FRITZ_DB:-$repo/api/fritz.db}"
 if [ "$demo" -eq 1 ]; then
     echo "== demo mode: fast greeting and mail, light background vision"
     export FRITZ_WATCH_OBJECTS="${FRITZ_DEMO_OBJECTS:-keys}" # only what the demo asks for
-    export FRITZ_GREET_AWAY_MS="${FRITZ_GREET_AWAY_MS:-15000}"   # greet after 15 s away
+    # Full greeting after 40 s away; a shorter step out (vision needs
+    # ~10 s without you to notice) gets the "all good?" check-in.
+    export FRITZ_GREET_AWAY_MS="${FRITZ_GREET_AWAY_MS:-40000}"
     export FRITZ_GREET_EVERY_MS="${FRITZ_GREET_EVERY_MS:-30000}"
+    export FRITZ_CHECKIN_EVERY_MS="${FRITZ_CHECKIN_EVERY_MS:-30000}"
     export FRITZ_MAIL_POLL_MS="${FRITZ_MAIL_POLL_MS:-20000}"     # a sent email shows up in ~20 s
     export FRITZ_SENTRY_COOLDOWN_MS="${FRITZ_SENTRY_COOLDOWN_MS:-30000}"
     export FRITZ_TRACK_HZ="${FRITZ_TRACK_HZ:-1}"

@@ -1,17 +1,17 @@
 ---
 name: fritz-pi-deploy
 description: >
-  Building and running Fritz on the Raspberry Pi 5: cross-compiling the Go
+  Building and running Fritz on the Raspberry Pi 4 Model B: cross-compiling the Go
   brain for arm64, building the C++ face, systemd services, camera/audio/display
   device access, secrets, and on-device troubleshooting. Use when deploying to
   the Pi, writing systemd units or Docker config, setting up the camera, mic or
   speaker, or when something works on the desktop but not on the Pi.
 ---
 
-# Deploying Fritz to the Pi 5
+# Deploying Fritz to the Pi 4B
 
 Target: 64-bit Raspberry Pi OS (Bookworm or newer) with the desktop and
-auto-login, Pi 5 (no 3.5 mm audio jack: the fallback speaker is USB),
+auto-login, Pi 4 Model B (its 3.5 mm audio jack is the fallback speaker output),
 3.5" display, **Logitech C922 USB webcam** (camera + mic) and an **Echo Dot
 Bluetooth speaker**. Hardware specifics: `fritz-c922`.
 
@@ -145,7 +145,7 @@ Logs: `journalctl -u fritz -f`.
   (`tailscale funnel --bg --set-path /webhooks/whatsapp http://127.0.0.1:8080/webhooks/whatsapp`),
   never the whole port.
 - Wi-Fi fallback: phone hotspot pre-configured in NetworkManager.
-- Speaker fallback: a USB speaker (the Pi 5 has no headphone jack).
+- Speaker fallback: a wired speaker in the Pi 4B's 3.5 mm jack, or a USB speaker.
 - `systemctl is-active fritz fritz-face` both active after a cold boot.
 - API key quota checked; Google token not expired (testing-mode tokens
   expire after 7 days — re-run `googleauth` the day before recording).

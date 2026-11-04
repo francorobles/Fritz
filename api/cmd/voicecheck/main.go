@@ -95,7 +95,7 @@ func main() {
 	defer store.Close()
 	// Pending actions share the same database file: things that
 	// change the world wait there for an explicit yes (spoken
-	// here, or Approve in the phone app).
+	// here, or a yes on WhatsApp).
 	actStore, actErr := actions.Open(dbPath)
 	if actErr != nil {
 		fmt.Println("actions: confirmations unavailable:", actErr)
@@ -210,8 +210,8 @@ func main() {
 		if reg.Calendar != nil {
 			tools = append(tools, agent.CalendarTools(reg.Calendar)...)
 			// Creating events is gated: the tool only files a
-			// pending action; the confirmer (or the phone app)
-			// executes it after an explicit yes.
+			// pending action; the confirmer executes it
+			// after an explicit yes.
 			tools = append(tools, agent.CalendarCreateTool(reg.Calendar, actStore)...)
 		} else if icfg.Calendar.Enabled {
 			fmt.Println("tools: calendar enabled but the client did not build — no calendar tools (see the status line above)")
@@ -727,16 +727,27 @@ func main() {
 	// seconds: sitting down to silence reads as broken. At most once
 	// per FRITZ_GREET_EVERY_MS so it never nags; FRITZ_GREET=off
 	// disables it.
+	//
+	// A shorter absence (stood up, back within the minute, or again
+	// soon after a greeting) gets a one-line check-in instead: "All
+	// good? Anything I can help with?" — it opens the follow-up
+	// window, so the user can just answer. Not during focus (it would
+	// be the interruption focus mode exists to stop) and at most once
+	// per FRITZ_CHECKIN_EVERY_MS. Vision only reports the user gone
+	// after ~10 s without a sighting, so leaning over to grab
+	// something doesn't count; FRITZ_CHECKIN_AWAY_MS adds to that.
 	if follow != nil {
 		awayFor := envMillis("FRITZ_GREET_AWAY_MS", 60000)
 		greetEvery := envMillis("FRITZ_GREET_EVERY_MS", 600000)
+		checkinAway := envMillis("FRITZ_CHECKIN_AWAY_MS", 0)
+		checkinEvery := envMillis("FRITZ_CHECKIN_EVERY_MS", 120000)
 		greetOn := !strings.EqualFold(os.Getenv("FRITZ_GREET"), "off")
 		canCheck := slices.ContainsFunc(tools, func(t agent.Tool) bool {
 			return strings.HasPrefix(t.Name, "email_") || strings.HasPrefix(t.Name, "calendar_")
 		})
 		started := time.Now()
 		go func() {
-			var leftAt, lastGreet time.Time
+			var leftAt, lastGreet, lastCheckin time.Time
 			for ev := range follow.Events {
 				if sentry != nil && sentry.OnPresence(ctx, ev.Present) {
 					fmt.Println("[sentry: someone came to the desk — photo going to WhatsApp]")
@@ -765,14 +776,21 @@ func main() {
 					continue
 				case sentry != nil && sentry.Armed():
 					continue // whoever arrived may not be the owner
-				case !leftAt.IsZero() && away < awayFor:
-					continue
-				case !lastGreet.IsZero() && now.Sub(lastGreet) < greetEvery:
-					continue
 				case !replyMu.TryLock():
 					continue // mid-conversation: no greeting needed
 				}
 				replyMu.Unlock()
+				if (!leftAt.IsZero() && away < awayFor) || (!lastGreet.IsZero() && now.Sub(lastGreet) < greetEvery) {
+					_, focused := focus.Active()
+					if leftAt.IsZero() || away < checkinAway || focused ||
+						(!lastCheckin.IsZero() && now.Sub(lastCheckin) < checkinEvery) {
+						continue
+					}
+					lastCheckin = now
+					fmt.Println("[check-in: user back in frame]")
+					respond(checkinPrompt, "", time.Time{}, true)
+					continue
+				}
 				lastGreet = now
 				fmt.Println("[greeting: user arrived]")
 				greet, check, announced := arrivalPrompt(leftAt, now, actLog, focus)
@@ -1272,6 +1290,12 @@ func printTiming(heardAt, requestAt, firstSentence, firstAudio time.Time) {
 	}
 }
 
+// checkinPrompt is the short check-in when the user comes back to
+// the desk after a brief absence.
+const checkinPrompt = "[Not from the user: your camera just saw the user come back to the desk after a short time away.] " +
+	"In one short, friendly sentence, ask if everything's okay or if there's anything you can help with. " +
+	"Don't use any tools and don't greet them again."
+
 // focusOverPrompt asks for the end-of-focus digest.
 func focusOverPrompt(held []alerts.Held) string {
 	if len(held) == 0 {
@@ -1286,7 +1310,7 @@ func focusOverPrompt(held []alerts.Held) string {
 // arrivalPrompt is the instruction for the arrival greeting. It is
 // Fritz's own observation, phrased so the model greets rather than
 // answers. Actions finished while the user was away (approved on
-// WhatsApp or the phone) are included, so Fritz can say "I sent
+// WhatsApp) are included, so Fritz can say "I sent
 // your reply to Sarah".
 //
 // greet uses no tools, so the hello is quick; check (empty when

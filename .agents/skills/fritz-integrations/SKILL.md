@@ -77,7 +77,7 @@ Code: `integrations/whatsapp.go` (send text/template),
 `whatsapp_webhook.go` (inbound, mounted by `cmd/server` at
 `/webhooks/whatsapp`), chat replies via `internal/chat` with the same
 Go-checked `Confirmer` as voice (a WhatsApp "yes" approves the pending
-action). Replaces the Android app for the demo's "away" scene; WhatsApp
+action). It's the demo's "away" scene; WhatsApp
 is also a Meta product, which counts for the judging.
 
 Setup (by the user, once):

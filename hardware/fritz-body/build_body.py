@@ -36,7 +36,7 @@ SEG = 96  # circle smoothness
 
 # --- MEASURE ---------------------------------------------------------------
 # The Pi + TFT as one block, screen facing forward, landscape. Defaults
-# fit a Pi 5 in the official case base with a 3.5" GPIO TFT on top;
+# fit a Pi 4B/Pi 5 in a case base with a 3.5" GPIO TFT on top;
 # a bare Pi + TFT stack is smaller (~86 x 57 x 25): pad it with foam
 # tape or change these.
 SLAB_W = 96.0   # left-right
@@ -231,7 +231,7 @@ def head():
                max(sx, 0) + 1 if PORT_SIDE > 0 else -POCKET_W / 2 + 1,
                SLAB_Y0 + 8, SLAB_Y1 - 2, SLAB_Z0 + 5, SLAB_Z0 + SLAB_H - 5)
     m -= port
-    # Vents low on the back (the Pi 5 runs warm).
+    # Vents low on the back (the Pi runs warm).
     for i in range(-3, 4):
         m -= box(i * 9 - 2, i * 9 + 2, POCKET_D / 2 - 1, HEAD_D, SLAB_Z0 + 12, SLAB_Z0 + SLAB_H - 10)
     # Head floor: centre access hole and the four neck bolts.

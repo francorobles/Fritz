@@ -23,7 +23,7 @@ that isn't connected means its tools aren't offered.
 Add a tool: a `Tool{Name, Description, Parameters, Run}` with strict
 argument decoding (`decodeArgs`) and a fake-backed test. A gated
 (world-changing) tool also needs an executor registered in
-`agent.Executors(reg)` — voice, WhatsApp and the phone all share that
+`agent.Executors(reg)` — voice, WhatsApp and the /actions routes all share that
 one map.
 
 ## Loop
@@ -106,10 +106,9 @@ and store a pending action. Fritz asks the tool's fixed `spoken` question
 ("Should I reply to Sarah: Thursday works? Just say yes…") without a
 second model round. The pending action
 runs only if the **user's next turn** is a clear yes ("yes", "send it", "do
-it"), checked by Go code, not by the model, **or** the user taps Approve in
-the Android app. A spoken non-yes cancels it. The model cannot bypass this by
-calling the tool again. Pending actions live in the shared store described in
-`fritz-mobile-backend` (atomic approve, 15 min expiry).
+it"), checked by Go code, not by the model, **or** a WhatsApp yes. A spoken non-yes cancels it. The model cannot bypass this by
+calling the tool again. Pending actions live in the shared store in
+`api/internal/actions` (atomic approve, 15 min expiry).
 
 ## Memory ("studies me")
 

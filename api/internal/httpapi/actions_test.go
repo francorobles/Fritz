@@ -91,9 +91,9 @@ func TestActionsEndpoints(t *testing.T) {
 	}
 }
 
-// TestActivityRecordsPhoneApproval: approving from the phone lands
+// TestActivityRecordsHTTPApproval: approving over /actions lands
 // in /activity, which the dashboard reads.
-func TestActivityRecordsPhoneApproval(t *testing.T) {
+func TestActivityRecordsHTTPApproval(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "fritz.db")
 	store, err := actions.Open(dbPath)
 	if err != nil {

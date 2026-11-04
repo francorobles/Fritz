@@ -7,9 +7,11 @@ wait while you focus, interrupting only for what can't, reminding you
 where you stopped when you come back, and reaching you on WhatsApp when
 you're away.
 
-Built for the Meta Global AI Hackathon on a Raspberry Pi 5 with Meta's
+Built for the Meta Global AI Hackathon on a Raspberry Pi 4 Model B with Meta's
 models: Muse Spark, SAM 3.1, Muse Voice Transcribe and Muse Wonder, and
 coded with Muse Code and Claude Code.
+
+<!-- Demo video: paste the link here before submitting, e.g. "**[Watch the 3-minute demo](https://...)**". -->
 
 ## The problem
 
@@ -23,6 +25,8 @@ settings don't know the difference, and they don't know you.
 |---|---|
 | "Let me focus for 30 minutes." | Holds email that can wait. Interrupts only for what can't wait until your focus ends ("sorry to interrupt — your card payment failed"). When time's up, one short spoken digest. |
 | "Hold project updates unless there's a deadline." | Remembers the rule and applies it from the next email on. Rules show on the dashboard. |
+| You sit down at your desk | His eyes find you and he says hello right away, then checks your email and calendar and mentions the one thing that matters ("Sarah from London needs an answer on Thursday today"). |
+| You step away for a moment and come back | A one-line check-in: "All good? Anything I can help with?" You can just answer, no wake phrase needed. Never during focus time. |
 | "I'm stopping at the pricing section." Then you leave. | When the camera sees you sit back down, his eyes turn to you: "Welcome back. You stopped at the pricing section, and Dana sent the weekly update while you were out." |
 | An important email arrives while you're away | A WhatsApp message. Reply there ("what does it say?", "tell her Thursday works") and Fritz answers with the same tools he has at the desk. |
 | "Reply to Dana that Thursday works." | Reads the reply back and sends it only after you say yes. This is enforced in code, not left to the model. |
@@ -46,7 +50,7 @@ tagged with the Meta model behind it.
 
 ```mermaid
 flowchart LR
-  subgraph Pi["Raspberry Pi 5"]
+  subgraph Pi["Raspberry Pi 4B"]
     mic["C922 mic"] --> voice["voice loop (Go)"]
     cam["C922 camera"] --> vision["vision: presence, gaze, objects"]
     voice <--> agent["agent loop + tools"]
@@ -77,7 +81,7 @@ flowchart LR
   commands from the Go side on `127.0.0.1:7070`.
 - **Confirmation is code, not a prompt.** Tools that send email or
   create events only file a pending action; a separate confirmer executes
-  it after an explicit yes (by voice, on WhatsApp, or in the phone app).
+  it after an explicit yes (by voice or on WhatsApp).
 - **Built for a live demo.** Replies stream sentence by sentence into
   local TTS, a short spoken acknowledgement covers tool calls, and a pause
   mid-sentence doesn't cut you off. SAM rate limits pause all camera calls
@@ -110,9 +114,27 @@ cd api && MODEL_API_KEY=... go run ./cmd/triageeval -runs 3
 
 ## Hardware
 
-Raspberry Pi 5 · 3.5" display (the eyes) · Logitech C922 webcam (camera
-and mic) · Amazon Echo Dot as a Bluetooth speaker. A 3D-printable desk body
-is in `hardware/fritz-body`.
+Raspberry Pi 4 Model B · 3.5" GPIO display (the eyes) · Logitech C922 webcam
+(camera and mic) · Amazon Echo Dot as a Bluetooth speaker.
+
+**The body** is a 3D-printable pod and head, generated from code
+(`hardware/fritz-body/build_body.py`, Python + manifold3d). The five
+printed parts are in `hardware/fritz-body/stl/`:
+
+| Part | Size (mm) | What it does |
+|---|---|---|
+| `base_shell` | Ø120 × 48 | The pod; its deck is cut for a standard-size servo |
+| `base_floor` | Ø113 × 7 | Press-fit floor with pockets for rubber feet |
+| `neck` | Ø88 × 18 | Collar between the base and the head |
+| `head` | 103 × 49 × 86 | Holds the Pi + screen; screen window in front, USB window on the side |
+| `lid` | 103 × 49 × 19 | Top cover with ears and vents |
+
+PLA, 0.2 mm layers, 3 walls, 15–20 % infill, no supports. The Pi's
+USB-C power runs under the Pi (use a right-angle plug) and out a slot low
+on the back of the head. Measure your Pi + screen before printing: the
+sizes at the top of `build_body.py` are the only thing that differs
+between builds. To regenerate: `pip install manifold3d numpy && python
+build_body.py`.
 
 ## Repository
 
@@ -123,7 +145,6 @@ is in `hardware/fritz-body`.
 | `web/` | Next.js dashboard |
 | `hardware/` | Printable body (parametric, Python + manifold3d) |
 | `scripts/` | `run-fritz.sh` (start everything on the Pi), `preflight.sh`, `check-hardware.sh` |
-| `android/` | Companion app (push approvals). Optional, not part of the demo: WhatsApp covers away mode |
 | `.agents/skills/` | Working notes for the coding agents that helped build Fritz |
 
 ## Run it
@@ -142,6 +163,15 @@ cd web && npm ci && npm run build && FRITZ_APP_TOKEN=... npm start
 Checks: `cd api && go vet ./... && go test ./...`,
 `cmake -S iot -B iot/build && cmake --build iot/build`,
 `cd web && npm run build`.
+
+## What's next
+
+- **A turning head.** The base already fits a standard servo (Hitec
+  HS-422) that would turn the whole head toward you as you arrive, driven
+  from the Pi's hardware PWM on GPIO12. The servo code isn't part of this
+  submission yet.
+- **Muse Gadgets** once the Muse app is available in the Philippines, as a
+  second way to reach you away from the desk.
 
 ## Built during the hackathon
 
