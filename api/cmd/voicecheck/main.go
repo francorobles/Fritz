@@ -720,15 +720,20 @@ func main() {
 		return delivered
 	}
 	// Arrival greeting: when the eyes find the user after they've
-	// been away a while, Fritz speaks first — a short hello plus the
-	// one thing that matters (checked with its tools), and anything
-	// it did for them while they were gone. At most once per
-	// FRITZ_GREET_EVERY_MS so it never nags; FRITZ_GREET=off
+	// been away a while, Fritz speaks first — a short hello and
+	// anything it did for them while they were gone, then the one
+	// thing that matters (checked with its tools) as a second turn.
+	// The hello comes first because the email check takes several
+	// seconds: sitting down to silence reads as broken. At most once
+	// per FRITZ_GREET_EVERY_MS so it never nags; FRITZ_GREET=off
 	// disables it.
 	if follow != nil {
 		awayFor := envMillis("FRITZ_GREET_AWAY_MS", 60000)
 		greetEvery := envMillis("FRITZ_GREET_EVERY_MS", 600000)
 		greetOn := !strings.EqualFold(os.Getenv("FRITZ_GREET"), "off")
+		canCheck := slices.ContainsFunc(tools, func(t agent.Tool) bool {
+			return strings.HasPrefix(t.Name, "email_") || strings.HasPrefix(t.Name, "calendar_")
+		})
 		started := time.Now()
 		go func() {
 			var leftAt, lastGreet time.Time
@@ -770,10 +775,18 @@ func main() {
 				replyMu.Unlock()
 				lastGreet = now
 				fmt.Println("[greeting: user arrived]")
-				prompt, announced := arrivalPrompt(leftAt, now, actLog, focus)
-				if respond(prompt, "", time.Time{}, true) {
-					announced()
+				greet, check, announced := arrivalPrompt(leftAt, now, actLog, focus)
+				if !respond(greet, "", time.Time{}, true) {
+					continue
 				}
+				announced()
+				// Skip the check if the user started talking over
+				// the hello: they lead the conversation now.
+				if check == "" || !canCheck || !replyMu.TryLock() {
+					continue
+				}
+				replyMu.Unlock()
+				respond(check, "", time.Time{}, true)
 			}
 		}()
 	}
@@ -1276,9 +1289,13 @@ func focusOverPrompt(held []alerts.Held) string {
 // WhatsApp or the phone) are included, so Fritz can say "I sent
 // your reply to Sarah".
 //
+// greet uses no tools, so the hello is quick; check (empty when
+// greet already has news to tell) is the email/calendar look that
+// follows it.
+//
 // announced marks the progress reminder and held messages as told;
 // call it only once the greeting was actually delivered.
-func arrivalPrompt(leftAt, now time.Time, log *activity.Log, focus *alerts.Focus) (prompt string, announced func()) {
+func arrivalPrompt(leftAt, now time.Time, log *activity.Log, focus *alerts.Focus) (greet, check string, announced func()) {
 	var b strings.Builder
 	b.WriteString("[Not from the user: your camera just saw the user sit down at the desk")
 	if !leftAt.IsZero() {
@@ -1323,11 +1340,12 @@ func arrivalPrompt(leftAt, now time.Time, log *activity.Log, focus *alerts.Focus
 			c()
 		}
 	}
+	b.WriteString("Don't use any tools. Keep it to two or three short sentences, no lists.")
 	if len(commit) > 0 {
-		b.WriteString("Don't use any tools. Keep it to two or three short sentences, no lists.")
-		return b.String(), announced
+		return b.String(), "", announced
 	}
-	b.WriteString("If you have email or calendar tools, check unread email from the last 12 hours and the calendar for the next hour, " +
-		"and mention only the single most important thing, in one sentence. If nothing stands out, just say hi. No lists.")
-	return b.String(), announced
+	check = "[Not from the user: you just greeted them as they sat down.] With whichever email and calendar tools you have, check " +
+		"unread email from the last 12 hours and the calendar for the next hour, and mention only the single most important thing, in one sentence. If nothing stands out, " +
+		"say in a few words that nothing needs them. Don't greet them again. No lists."
+	return b.String(), check, announced
 }

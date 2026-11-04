@@ -56,16 +56,24 @@ func TestArrivalPrompt(t *testing.T) {
 	_ = log.Add(activity.Entry{At: leftAt.Add(7 * time.Minute), Source: "voice", Kind: activity.KindTool, Detail: "TOOL", OK: true})
 
 	focus := &alerts.Focus{State: openStore(t)}
-	got, _ := arrivalPrompt(leftAt, time.Now(), log, focus)
+	got, check, _ := arrivalPrompt(leftAt, time.Now(), log, focus)
 	if !strings.Contains(got, "about 20 minutes away") || !strings.Contains(got, "reply to Sarah") {
 		t.Errorf("prompt = %q", got)
+	}
+	// The hello comes first and uses no tools; the email check is
+	// its own turn after it.
+	if !strings.Contains(got, "Don't use any tools") || strings.Contains(got, "email") {
+		t.Errorf("greeting should not check email: %q", got)
+	}
+	if !strings.Contains(check, "email") || strings.Contains(check, "Greet") {
+		t.Errorf("check = %q", check)
 	}
 	for _, unwanted := range []string{"OLD", "FAILED", "TOOL"} {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("prompt includes %s: %q", unwanted, got)
 		}
 	}
-	if first, _ := arrivalPrompt(time.Time{}, time.Now(), nil, focus); strings.Contains(first, "away") {
+	if first, _, _ := arrivalPrompt(time.Time{}, time.Now(), nil, focus); strings.Contains(first, "away") {
 		t.Errorf("first arrival should not mention time away: %q", first)
 	}
 }
@@ -79,20 +87,23 @@ func TestArrivalPromptWhereWasI(t *testing.T) {
 	_ = alerts.SaveProgress(st, alerts.Progress{Task: "the pricing section", Next: "the discount table", At: leftAt})
 	_ = focus.Hold(`Email from Dana: "Q4 update"`)
 
-	got, announced := arrivalPrompt(leftAt, time.Now(), nil, focus)
+	got, check, announced := arrivalPrompt(leftAt, time.Now(), nil, focus)
 	for _, want := range []string{"pricing section", "discount table", "Q4 update", "Don't use any tools"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt lacks %q: %q", want, got)
 		}
 	}
+	if check != "" {
+		t.Errorf("news to tell already: no email check, got %q", check)
+	}
 	// The greeting failed (announced not called): nothing is lost.
-	retry, announced := arrivalPrompt(leftAt, time.Now(), nil, focus)
+	retry, _, announced := arrivalPrompt(leftAt, time.Now(), nil, focus)
 	if !strings.Contains(retry, "pricing section") || !strings.Contains(retry, "Q4 update") {
 		t.Fatalf("a failed greeting lost the reminder: %q", retry)
 	}
 	// Delivered: told once, not repeated.
 	announced()
-	again, _ := arrivalPrompt(leftAt, time.Now(), nil, focus)
+	again, _, _ := arrivalPrompt(leftAt, time.Now(), nil, focus)
 	if strings.Contains(again, "pricing") || strings.Contains(again, "Q4") {
 		t.Errorf("second arrival repeated the reminder: %q", again)
 	}
