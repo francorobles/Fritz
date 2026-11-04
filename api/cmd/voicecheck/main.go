@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -383,6 +384,26 @@ func main() {
 		if confirmer != nil && !proactive {
 			if handled, reply := confirmer.HandleTurn(ctx, request); handled {
 				preset = reply
+			}
+		}
+		// "I'm back" / "sentry off" while sentry is on is also
+		// decided here: the model, told whoever talks may not be the
+		// owner, kept refusing to switch it off. Anyone can (Fritz
+		// can't tell who it is), and the owner gets a WhatsApp note
+		// that it was switched off at the desk.
+		if preset == "" && !proactive && sentry != nil && sentry.Armed() && sentryOffPhrase(request) {
+			for _, t := range tools {
+				if t.Name != "sentry_mode" {
+					continue
+				}
+				if out, err := t.Run(ctx, json.RawMessage(`{"on":false}`)); err != nil {
+					fmt.Println("sentry: could not switch off:", err)
+				} else {
+					preset = "Okay, sentry mode is off."
+					if t.Confirm != nil {
+						preset = t.Confirm(out)
+					}
+				}
 			}
 		}
 
@@ -1295,6 +1316,22 @@ func printTiming(heardAt, requestAt, firstSentence, firstAudio time.Time) {
 	if len(parts) > 0 {
 		fmt.Println("[timing] " + strings.Join(parts, " | "))
 	}
+}
+
+// sentryOffWords switch sentry mode off without asking the model.
+var sentryOffWords = []string{"sentry off", "sentry mode off", "turn off sentry", "stop sentry", "stop watching",
+	"disarm", "unlock", "i'm back", "im back", "i am back", "it's me", "its me", "it is me"}
+
+// sentryOffPhrase reports whether a turn asks to switch sentry off.
+func sentryOffPhrase(text string) bool {
+	t := strings.ToLower(strings.NewReplacer("’", "'", ",", " ", ".", " ", "!", " ", "?", " ").Replace(text))
+	t = " " + strings.Join(strings.Fields(t), " ") + " "
+	for _, w := range sentryOffWords {
+		if strings.Contains(t, " "+w+" ") {
+			return true
+		}
+	}
+	return false
 }
 
 // checkinPrompt is the short check-in when the user comes back to

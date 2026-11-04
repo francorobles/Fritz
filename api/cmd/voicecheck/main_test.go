@@ -178,3 +178,18 @@ func TestPendingTurnCarryExpires(t *testing.T) {
 		t.Fatalf("stale carry merged: %q", got)
 	}
 }
+
+// TestSentryOffPhrase: the owner coming back can always switch sentry
+// off, whatever the model thinks; unrelated talk doesn't.
+func TestSentryOffPhrase(t *testing.T) {
+	for _, yes := range []string{"Hey Fritz, I'm back.", "hey fritz i’m back", "Fritz, sentry off!", "unlock", "It's me, stop watching", "turn off sentry mode please"} {
+		if !sentryOffPhrase(yes) {
+			t.Errorf("%q should switch sentry off", yes)
+		}
+	}
+	for _, no := range []string{"Hey Fritz, what's on my calendar?", "Is Sarah back from London?", "background noise", "sentry mode on"} {
+		if sentryOffPhrase(no) {
+			t.Errorf("%q should not switch sentry off", no)
+		}
+	}
+}
