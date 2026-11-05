@@ -15,7 +15,7 @@ Built for the Meta Global AI Hackathon on a Raspberry Pi 4 Model B with Meta's
 models: Muse Spark, SAM 3.1, Muse Voice Transcribe and Muse Wonder, and
 coded with Muse Code and Claude Code.
 
-<!-- Demo video: paste the link here before submitting, e.g. "**[Watch the 3-minute demo](https://...)**". -->
+**[Watch the 3-minute demo](https://youtu.be/18yHkounti0)**
 
 ## The problem
 
@@ -101,8 +101,6 @@ ignore:
 ```sh
 cd api && MODEL_API_KEY=... go run ./cmd/triageeval -runs 3
 ```
-
-<!-- Paste the latest score here, e.g. "Latest: 16/18, 0 missed interruptions". -->
 
 ## Privacy and safety
 
